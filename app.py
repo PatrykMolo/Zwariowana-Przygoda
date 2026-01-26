@@ -7,7 +7,7 @@ import io
 
 # --- KONFIGURACJA ---
 DATA_STARTU_WYJAZDU = date(2026, 7, 24)
-DLUGOSC_WYJAZDU_DNI = 14
+DLUGOSC_WYJAZDU_DNI = 12
 DNI_W_WIDOKU = 5
 NAZWA_PLIKU_BAZY = "data.csv" # Musi być taki sam jak utworzyłeś na GitHubie
 
