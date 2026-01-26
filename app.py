@@ -18,7 +18,7 @@ st.markdown(
     """
     <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center; margin-bottom: 2rem;'>
         <h1 style='color: #0E1117; margin:0; font-size: 3rem;'>🚗 Zwariowana Przygoda 2026</h1>
-        <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>Baza danych: GitHub Repository 🐙</p>
+        <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>🐒Wyjazd Czarnuchow🐒</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -130,7 +130,7 @@ def generuj_tlo_widoku(start_date, num_days):
     return pd.DataFrame(tlo_data)
 
 # --- INTERFEJS ---
-tab_edytor, tab_kalendarz = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz Wyjazdu"])
+tab_edytor, tab_kalendarz = st.tabs(["📝 Edytor", "📅 Kalendarz Wyjazdu"])
 
 # ==========================================
 # ZAKŁADKA 1: EDYTOR
@@ -157,7 +157,7 @@ with tab_edytor:
                     st.rerun()
 
     with col_b:
-        st.subheader("📦 Giełda pomysłów (Niezaplanowane)")
+        st.subheader("📦 Giełda pomysłów")
         
         # Filtrujemy
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
