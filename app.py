@@ -18,7 +18,7 @@ st.markdown(
     """
     <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center; margin-bottom: 2rem;'>
         <h1 style='color: #0E1117; margin:0; font-size: 3rem;'>🚗 Zwariowana Przygoda 2026</h1>
-        <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>🐒Wyjazd Czarnuchow🐒</p>
+        <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>🐒Wyjazd Czarnuchów🐒</p>
     </div>
     """,
     unsafe_allow_html=True
