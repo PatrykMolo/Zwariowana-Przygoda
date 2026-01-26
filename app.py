@@ -122,6 +122,7 @@ def generuj_tlo_widoku(start_date, num_days):
         current_day = start_date + timedelta(days=d)
         for h in range(24):
             tlo_data.append({
+                'DataFull': current_day,  
                 'Dzień': current_day.strftime('%d.%m'),
                 'Godzina': h,
                 'Tytuł_Display': '',
@@ -257,7 +258,9 @@ with tab_kalendarz:
         range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
 
         base = alt.Chart(background_df).encode(
-            x=alt.X('Dzień:O', axis=alt.Axis(labelAngle=0, title=None, labelFontSize=12)),
+            x=alt.X('Dzień:O', 
+                    sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
+                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=12)),
             y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
         )
         layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(color=alt.value('white'))
