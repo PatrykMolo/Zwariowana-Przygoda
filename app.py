@@ -613,36 +613,3 @@ with tab_podsumowanie:
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
 
-# --- QR CODE W SIDEBARZE (STYL "BIAŁA KARTA") ---
-with st.sidebar:
-    st.markdown("---")
-    st.markdown(
-        f"<h3 style='text-align: center; color: {COLOR_TEXT}; font-family: Montserrat; margin-bottom: 10px;'>📲 Udostępnij</h3>", 
-        unsafe_allow_html=True
-    )
-    
-    # WAŻNE: Tu wklej link, który widzisz w pasku przeglądarki!
-    # Np. "https://moj-trip-2026.streamlit.app"
-    app_url = "https://zwariowanyplanner.streamlit.app" 
-    
-    # Przygotowanie kolorów do API (bez znaku #)
-    qr_color = COLOR_ACCENT.lstrip('#') 
-    
-    # Kontener HTML z białym tłem
-    qr_html = f"""
-    <div style="
-        background-color: white; 
-        padding: 20px; 
-        border-radius: 12px; 
-        display: flex; 
-        justify-content: center; 
-        align-items: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        margin-bottom: 10px;
-    ">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;">
-    </div>
-    """
-    
-    st.markdown(qr_html, unsafe_allow_html=True)
-    st.caption("Zeskanuj telefonem, aby dołączyć do planowania!")
