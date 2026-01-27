@@ -421,48 +421,112 @@ with tab_wspolne:
         st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
 # ==========================================
-# ZAKŁADKA 4: PODSUMOWANIE (BEZ ZMIAN MATEMATYKI NA RAZIE)
+# ZAKŁADKA 4: PODSUMOWANIE (FINAL DASHBOARD)
 # ==========================================
 with tab_podsumowanie:
-    st.subheader("💸 Ile to będzie kosztować?")
+    st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
     
-    mask_koszty = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
-                  (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    # --- 1. PRZYGOTOWANIE DANYCH ---
+    # Worek A: Indywidualne i Zaplanowane
+    mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
+             (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    df_A = st.session_state.db[mask_A].copy()
+    df_A['Koszt'] = pd.to_numeric(df_A['Koszt'], errors='coerce').fillna(0)
+    sum_A = df_A['Koszt'].sum()
+
+    # Worek B: Wspólne i Paliwo (Niezależnie od 'Zaplanowane', bo to koszty stałe)
+    mask_B = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
+    df_B = st.session_state.db[mask_B].copy()
+    df_B['Koszt'] = pd.to_numeric(df_B['Koszt'], errors='coerce').fillna(0)
+    sum_B_total = df_B['Koszt'].sum()
+
+    # Dzielnik (Liczba osób)
+    liczba_osob = st.session_state.config_people
+    sum_B_per_person = sum_B_total / liczba_osob
+
+    # Suma Całkowita (Na głowę)
+    grand_total = sum_A + sum_B_per_person
+
+    # --- 2. GÓRA: 3 DATA CARDS ---
+    kpi1, kpi2, kpi3 = st.columns(3)
     
-    df_costs = st.session_state.db[mask_koszty].copy()
-    
-    df_costs['Koszt'] = pd.to_numeric(df_costs['Koszt'], errors='coerce').fillna(0)
-    
-    if not df_costs.empty:
-        col_kpi, col_chart = st.columns([1, 2])
+    with kpi1:
+        st.metric(
+            label="Twoje łączne koszty", 
+            value=f"{grand_total:.2f} PLN",
+            help="Suma Twoich atrakcji + Twoja część zrzutki na koszty wspólne"
+        )
+    with kpi2:
+        st.metric(
+            label="Tylko atrakcje (Kalendarz)", 
+            value=f"{sum_A:.2f} PLN",
+            delta="Indywidualne"
+        )
+    with kpi3:
+        st.metric(
+            label="Zrzutka (Noclegi/Paliwo)", 
+            value=f"{sum_B_per_person:.2f} PLN",
+            delta=f"Całość: {sum_B_total:.0f} zł / {liczba_osob} os.",
+            delta_color="off" # Szary kolor delty
+        )
+
+    st.divider()
+
+    # --- 3. DÓŁ: WYKRESY I TABELE ---
+    col_left, col_right = st.columns([1, 2])
+
+    # LEWA KOLUMNA: PIE CHART + TABELA ATRAKCJI
+    with col_left:
+        st.markdown("##### 🍰 Struktura kosztów (Twoja działka)")
         
-        with col_kpi:
-            # A. KPI
-            total_cost = df_costs['Koszt'].sum()
-            st.metric(label="Całkowity koszt wyjazdu", value=f"{total_cost:.2f} PLN")
-            
-            st.divider()
-            
-            # B. TABELA
-            tabela = df_costs[df_costs['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
-            
-            if not tabela.empty:
-                st.write("**Szczegóły wydatków:**")
-                st.dataframe(
-                    tabela, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    column_config={
-                        "Koszt": st.column_config.NumberColumn("Koszt", format="%.2f zł")
-                    }
-                )
-            else:
-                st.info("Brak płatnych atrakcji.")
-                
-        with col_chart:
-            st.write("**📅 Rozkład wydatków w czasie**")
-            df_costs['Data_Group'] = df_costs['Start'].dt.date
-            daily_costs = df_costs.groupby('Data_Group')['Koszt'].sum().reset_index()
+        # Przygotowanie danych do Pie Chart
+        # 1. Kawałek tortu: Kalendarz (jako całość)
+        pie_data = [{'Kategoria': 'Atrakcje (Kalendarz)', 'Wartość': sum_A}]
+        
+        # 2. Kawałki tortu: Kategorie kosztów wspólnych (podzielone przez osoby)
+        if not df_B.empty:
+            grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
+            for _, row in grouped_B.iterrows():
+                pie_data.append({
+                    'Kategoria': row['Kategoria'], # np. Nocleg, Trasa
+                    'Wartość': row['Koszt'] / liczba_osob # Dzielimy na osobę
+                })
+        
+        df_pie = pd.DataFrame(pie_data)
+        df_pie = df_pie[df_pie['Wartość'] > 0] # Ukrywamy zerowe
+
+        if not df_pie.empty:
+            pie_chart = alt.Chart(df_pie).mark_arc(innerRadius=50).encode(
+                theta=alt.Theta(field="Wartość", type="quantitative"),
+                color=alt.Color(field="Kategoria", type="nominal", legend=alt.Legend(orient="bottom")),
+                tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
+            ).properties(height=300)
+            st.altair_chart(pie_chart, use_container_width=True)
+        else:
+            st.caption("Brak danych do wykresu kołowego.")
+
+        st.markdown("##### 🧾 Szczegóły Twoich atrakcji")
+        # Tabela tylko z Worka A (tak jak chciałeś)
+        if not df_A.empty:
+            tabela = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
+            st.dataframe(
+                tabela, 
+                use_container_width=True, 
+                hide_index=True,
+                height=200,
+                column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")}
+            )
+        else:
+            st.info("Brak płatnych atrakcji w kalendarzu.")
+
+    # PRAWA KOLUMNA: BAR CHART (OSI CZASU)
+    with col_right:
+        st.markdown("##### 📅 Kiedy portfel zaboli najbardziej? (Atrakcje)")
+        
+        if not df_A.empty:
+            # Logika Bar Chart (bez zmian, tylko dopasowana do layoutu)
+            df_A['Data_Group'] = df_A['Start'].dt.date
+            daily_costs = df_A.groupby('Data_Group')['Koszt'].sum().reset_index()
             daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
             daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
             
@@ -480,8 +544,8 @@ with tab_podsumowanie:
                     alt.Tooltip('Etykieta', title='Dzień'), 
                     alt.Tooltip('Koszt', format='.2f', title='Kwota')
                 ]
-            ).properties(height=400)
-            st.altair_chart(bar_chart, use_container_width=True)
+            ).properties(height=550) # Wyższy wykres, żeby pasował do lewej kolumny
             
-    else:
-        st.info("Kalendarz jest pusty. Zaplanuj coś, aby zobaczyć koszty!")
+            st.altair_chart(bar_chart, use_container_width=True)
+        else:
+            st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
