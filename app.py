@@ -372,67 +372,149 @@ with tab_edytor:
         else: st.info("Brak elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (RETRO PALETTE)
+# ZAKŁADKA 2: KALENDARZ (HYBRYDOWY: DESKTOP & MOBILE)
 # ==========================================
 with tab_kalendarz:
+    # 1. Przełącznik Widoku
+    col_switch, _ = st.columns([1, 4])
+    with col_switch:
+        mobile_mode = st.toggle("📱 Widok Mobilny (Lista)", value=False)
+
+    # 2. Logika Danych
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
-    background_df = generuj_tlo_widoku(current_start_date, current_days)
-    full_df = przygotuj_dane_do_siatki(st.session_state.db)
     
-    # --- PALETA WYKRESU ---
-    # Atrakcja = Cegła, Trasa = Zgaszony Morski, Odpoczynek = Krem, Tło = Ciemny Grafit
-    domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
-    range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
+    # Pobieramy tylko zaplanowane i posortowane chronologicznie
+    mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
+               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    df_events = st.session_state.db[mask_zap].copy()
     
-    total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
+    if not df_events.empty:
+        df_events['Start'] = pd.to_datetime(df_events['Start'])
+        df_events = df_events.sort_values(by='Start')
 
-    st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
-    
-    base = alt.Chart(background_df).encode(
-        x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
-                axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)),
-        y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT))
-    )
-    layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.2).encode(color=alt.value(COLOR_BG), tooltip=['Dzień', 'Godzina'])
+    # --- WIDOK MOBILNY (AGENDA) ---
+    if mobile_mode:
+        if df_events.empty:
+            st.info("Nic jeszcze nie zaplanowano.")
+        else:
+            # Grupujemy wydarzenia po dniach
+            df_events['Date_Only'] = df_events['Start'].dt.date
+            unique_dates = sorted(df_events['Date_Only'].unique())
 
-    if not full_df.empty:
-        chart_data = alt.Chart(full_df).encode(
-            x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
-            y=alt.Y('Godzina:O'),
-            tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
-        )
-        layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(
-            color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
-        )
-        # Tekst na klockach - dla kontrastu używamy tła na jasnych i jasnego na ciemnych
-        # Ale dla uproszczenia w retro theme: Ciemny tekst na jasnym/ceglastym tle zazwyczaj wygląda ok
-        # Tu ustawimy COLOR_BG (czyli ciemny grafit)
-        # ZMIANA: Przesunięcie w lewo (ujemne dx) i pogrubienie (bold)
-        layer_text = chart_data.mark_text(
-            dx=-42,                 # <--- COFAMY tekst o 42px w lewo (od środka kolumny)
-            align='left',           # Tekst piszemy od lewej do prawej
-            baseline='middle',
-            fontSize=11,            # Nieco większe dla czytelności
-            fontWeight='bold',      # <--- POGRUBIENIE
-            limit=SZEROKOSC_KOLUMNY_DZIEN-10
-        ).encode(
-            text=alt.Text('Tytuł_Display'),
-            # Używamy koloru tła (Ciemny Granat) jako koloru tekstu, 
-            # bo na jasnych/ceglastych klockach będzie najlepiej widoczny
-            color=alt.value(COLOR_BG) 
-        )
-        final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
+            for day in unique_dates:
+                # Nagłówek Dnia
+                day_str = day.strftime('%d.%m (%A)')
+                # Tłumaczenie dni tygodnia (opcjonalne)
+                day_map = {'Monday': 'Poniedziałek', 'Tuesday': 'Wtorek', 'Wednesday': 'Środa', 'Thursday': 'Czwartek', 'Friday': 'Piątek', 'Saturday': 'Sobota', 'Sunday': 'Niedziela'}
+                day_name = day.strftime('%A')
+                day_display = f"{day.strftime('%d.%m')} • {day_map.get(day_name, day_name)}"
+                
+                st.markdown(f"#### 🗓️ {day_display}")
+                
+                daily_items = df_events[df_events['Date_Only'] == day]
+                
+                for _, row in daily_items.iterrows():
+                    # Przygotowanie danych do karty
+                    start_time = row['Start'].strftime('%H:%M')
+                    end_time = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%H:%M')
+                    title = row['Tytuł']
+                    cat = row['Kategoria']
+                    cost = row['Koszt'] if row['Koszt'] > 0 else ""
+                    cost_badge = f"<span style='float:right; font-weight:bold;'>{cost:.0f} zł</span>" if cost else ""
+                    
+                    # Kolorowanie kart w zależności od kategorii
+                    if cat == "Atrakcja":
+                        bg_color = COLOR_ACCENT # Ceglasty
+                        text_color = COLOR_BG   # Ciemny tekst
+                    elif cat == "Trasa":
+                        bg_color = COLOR_SEC    # Morski
+                        text_color = COLOR_TEXT # Jasny tekst
+                    else:
+                        bg_color = "#444"       # Szary dla reszty
+                        text_color = "#fff"
+
+                    # HTML Karty (Mobile Friendly)
+                    card_html = f"""
+                    <div style="
+                        background-color: {bg_color};
+                        color: {text_color};
+                        padding: 12px 16px;
+                        border-radius: 10px;
+                        margin-bottom: 8px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                        border-left: 5px solid rgba(0,0,0,0.2);
+                    ">
+                        <div style="font-size: 0.85rem; opacity: 0.8; display: flex; justify-content: space-between;">
+                            <span>⏱️ {start_time} - {end_time} ({int(row['Czas (h)'])}h)</span>
+                            {cost_badge}
+                        </div>
+                        <div style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">
+                            {title}
+                        </div>
+                        <div style="font-size: 0.8rem; opacity: 0.7; margin-top: 2px; text-transform: uppercase; letter-spacing: 1px;">
+                            {cat}
+                        </div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+                
+                st.write("") # Odstęp między dniami
+
+    # --- WIDOK DESKTOP (ALTAIR) ---
     else:
-        final_chart = layer_bg.properties(height=600, width=total_width)
+        background_df = generuj_tlo_widoku(current_start_date, current_days)
+        full_df = przygotuj_dane_do_siatki(st.session_state.db)
+        
+        domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
+        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
+        
+        total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
 
-    st.altair_chart(final_chart)
+        st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
+        
+        base = alt.Chart(background_df).encode(
+            x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
+                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)),
+            y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT))
+        )
+        layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.2).encode(color=alt.value(COLOR_BG), tooltip=['Dzień', 'Godzina'])
+
+        if not full_df.empty:
+            chart_data = alt.Chart(full_df).encode(
+                x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
+                y=alt.Y('Godzina:O'),
+                tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
+            )
+            layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(
+                color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
+            )
+            
+            # POPRAWIONE ETYKIETY (BOLD + LEFT ALIGN)
+            layer_text = chart_data.mark_text(
+                dx=-42,                 
+                align='left',           
+                baseline='middle',
+                fontSize=11,            
+                fontWeight='bold',      
+                limit=SZEROKOSC_KOLUMNY_DZIEN-10
+            ).encode(
+                text=alt.Text('Tytuł_Display'),
+                color=alt.value(COLOR_BG) 
+            )
+            final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
+        else:
+            final_chart = layer_bg.properties(height=600, width=total_width)
+
+        st.altair_chart(final_chart)
+        
     st.divider()
 
+    # --- PRZYBORNIK (WSPÓLNY DLA OBU WIDOKÓW) ---
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
         st.subheader("📌 Przybornik")
-        st.write("Filtruj listę:")
+        # (Reszta kodu przybornika bez zmian...)
         c1, c2, c3 = st.columns(3)
         filtry = []
         if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
@@ -465,6 +547,7 @@ with tab_kalendarz:
 
     with col_tools_right:
         st.subheader("🗑️ Zdejmowanie")
+        # (Reszta kodu zdejmowania bez zmian...)
         mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                    (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         zaplanowane = st.session_state.db[mask_zap]
