@@ -408,8 +408,18 @@ with tab_kalendarz:
         # Tekst na klockach - dla kontrastu używamy tła na jasnych i jasnego na ciemnych
         # Ale dla uproszczenia w retro theme: Ciemny tekst na jasnym/ceglastym tle zazwyczaj wygląda ok
         # Tu ustawimy COLOR_BG (czyli ciemny grafit)
-        layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=SZEROKOSC_KOLUMNY_DZIEN-5).encode(
-            text=alt.Text('Tytuł_Display'), 
+        # ZMIANA: Przesunięcie w lewo (ujemne dx) i pogrubienie (bold)
+        layer_text = chart_data.mark_text(
+            dx=-42,                 # <--- COFAMY tekst o 42px w lewo (od środka kolumny)
+            align='left',           # Tekst piszemy od lewej do prawej
+            baseline='middle',
+            fontSize=11,            # Nieco większe dla czytelności
+            fontWeight='bold',      # <--- POGRUBIENIE
+            limit=SZEROKOSC_KOLUMNY_DZIEN-10
+        ).encode(
+            text=alt.Text('Tytuł_Display'),
+            # Używamy koloru tła (Ciemny Granat) jako koloru tekstu, 
+            # bo na jasnych/ceglastych klockach będzie najlepiej widoczny
             color=alt.value(COLOR_BG) 
         )
         final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
