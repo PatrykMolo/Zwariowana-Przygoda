@@ -302,7 +302,7 @@ with tab_kalendarz:
         else: st.info("Kalendarz pusty.")
 
 # ==========================================
-# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (NAPRAWIONY WYKRES)
+# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (FIX 2.0)
 # ==========================================
 with tab_koszty:
     st.subheader("💸 Ile to będzie kosztować?")
@@ -343,27 +343,34 @@ with tab_koszty:
         with col_chart:
             st.write("**📅 Rozkład wydatków w czasie**")
             
-            # 1. Tworzymy kolumnę z samą datą (obiekt date)
-            df_costs['Data_Sort'] = df_costs['Start'].dt.date
+            # 1. Grupujemy po dacie
+            # Tworzymy kolumnę pomocniczą 'Data_Group' do grupowania
+            df_costs['Data_Group'] = df_costs['Start'].dt.date
             
-            # 2. Grupujemy i sumujemy koszty dla każdego dnia
-            daily_costs = df_costs.groupby('Data_Sort')['Koszt'].sum().reset_index()
+            # Agregacja (sumowanie kosztów dla dnia)
+            daily_costs = df_costs.groupby('Data_Group')['Koszt'].sum().reset_index()
             
-            # 3. WYKRES (ZMIANA: Data:O zamiast Data:T)
+            # 2. PRZYGOTOWANIE DANYCH DO WYKRESU (KLUCZOWE!)
+            # Tworzymy etykietę jako zwykły tekst "DD.MM" (np. "25.07")
+            daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
+            # Tworzymy klucz sortowania jako tekst ISO "YYYY-MM-DD" (żeby 01.08 było po 31.07)
+            daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
+            
+            # 3. WYKRES BAR CHART
             bar_chart = alt.Chart(daily_costs).mark_bar(
                 color='#FF4B4B',
-                cornerRadiusTopLeft=3,     # Opcjonalnie: zaokrąglone rogi słupków
+                cornerRadiusTopLeft=3,
                 cornerRadiusTopRight=3
             ).encode(
-                # Używamy :O (Ordinal) - to traktuje daty jak dyskretne kategorie (klocki)
-                # Dzięki temu słupek zajmuje pełną szerokość dnia
-                x=alt.X('Data_Sort:O', 
-                        title='Dzień', 
-                        axis=alt.Axis(format='%d.%m', labelAngle=0)), 
+                # Oś X: Wyświetlamy Etykietę, ale Sortujemy po Sort_Key
+                x=alt.X('Etykieta:O', 
+                        title='Dzień',
+                        sort=alt.EncodingSortField(field="Sort_Key", order="ascending"),
+                        axis=alt.Axis(labelAngle=0)), 
                 y=alt.Y('Koszt:Q', title='Suma (PLN)'),
                 tooltip=[
-                    alt.Tooltip('Data_Sort:O', format='%d.%m.%Y', title='Data'), 
-                    alt.Tooltip('Koszt:Q', format='.2f', title='Kwota')
+                    alt.Tooltip('Etykieta', title='Dzień'), 
+                    alt.Tooltip('Koszt', format='.2f', title='Kwota')
                 ]
             ).properties(height=400)
             
