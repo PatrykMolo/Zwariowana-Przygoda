@@ -25,24 +25,55 @@ NAZWA_PLIKU_CONFIG = "config.json"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
-# --- CSS (NAPRAWA IKONY SIDEBARA) ---
+# --- CSS (CLEAN APP MODE - BEZ PASKÓW STREAMLIT) ---
 st.markdown(
     f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
 
-    /* POPRAWKA: Usunęliśmy [class*="st-"], co naprawia ikonę strzałki */
+    /* 1. TYPOGRAFIA */
     html, body {{
         font-family: 'Montserrat', sans-serif;
     }}
-    
-    /* Precyzyjniej celujemy w elementy tekstowe, żeby zachować spójność */
     h1, h2, h3, p, div, span {{
         font-family: 'Montserrat', sans-serif;
     }}
+    h1, h2, h3 {{
+        font-weight: 700 !important;
+    }}
 
-    .block-container {{ padding-top: 2rem; }}
+    /* 2. UKRYWANIE ELEMENTÓW INTERFEJSU STREAMLIT (KIOSK MODE) */
     
+    /* Ukrywa górny pasek (Hamburger menu, Deploy button, kolorowy pasek) */
+    header {{
+        visibility: hidden;
+    }}
+    
+    /* Ukrywa stopkę "Made with Streamlit" */
+    footer {{
+        visibility: hidden;
+    }}
+    
+    /* Ukrywa Twój awatar i ikonę "Viewer" na dole po prawej */
+    .viewerBadge_container__1QSob {{
+        display: none !important;
+    }}
+    [data-testid="stStatusWidget"] {{
+        display: none !important;
+    }}
+    
+    /* Ukrywa menu z trzema kropkami (jeśli header nie wystarczy) */
+    #MainMenu {{
+        visibility: hidden;
+    }}
+
+    /* 3. POPRAWKI UKŁADU */
+    
+    /* Zmniejszamy odstęp na górze, skoro nie ma paska narzędzi */
+    .block-container {{
+        padding-top: 1rem !important;
+    }}
+
     /* Checkboxy */
     div[data-testid="stCheckbox"] {{ margin-bottom: -10px; }}
     
@@ -66,11 +97,6 @@ st.markdown(
         font-size: 3rem; 
         color: {COLOR_ACCENT}; 
         font-weight: 700;
-    }}
-    
-    /* Nagłówki */
-    h1, h2, h3 {{
-        font-weight: 700 !important;
     }}
     
     /* Zakładki */
