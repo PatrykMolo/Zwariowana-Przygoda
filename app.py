@@ -166,82 +166,59 @@ def settings_dialog():
                 st.success("Zapisano!")
                 st.rerun()
 
-# --- HEADER (WERSJA Z APOSTROFAMI - NAPRAWA KOLORÓW) ---
+# --- HEADER (WERSJA PANCERNA - BEZ POTRÓJNYCH CUDZYSŁOWÓW) ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
 
 with col_title:
-    # Używamy potrójnego apostrofu ('''), żeby nie gryzło się z cudzysłowami (") w HTML
-    icon_github = '''
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-bottom: 2px;">
-        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-    </svg>
-    '''
+    # 1. Definicje zmiennych (zwykłe stringi, zero magii)
+    # Ikona Github
+    icon_github = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
+        'style="vertical-align: middle; margin-bottom: 3px;">'
+        '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>'
+        '</svg>'
+    )
     
-    # Tu też zmieniamy na f''' ... '''
-    icon_car = f'''
-    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/>
-        <circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>
-        <circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>
-    </svg>
-    '''
+    # Ikona Auta (używamy f-string, ale w nawiasach, żeby uniknąć błędów)
+    icon_car = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" '
+        f'fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/>'
+        f'<circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
+        f'<circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
+        '</svg>'
+    )
 
-    header_html = f'''
-    <div style='
-        background-color: {COLOR_SEC}; 
-        padding: 2rem; 
-        border-radius: 16px; 
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    '>
-        <div style='flex: 1;'>
-            <h1 style='
-                color: {COLOR_TEXT}; 
-                margin: 0; 
-                font-size: 2.8rem; 
-                line-height: 1.1; 
-                letter-spacing: -1px;
-                text-transform: uppercase;
-                font-weight: 700;
-            '>
-                ZWARIOWANA<br>PRZYGODA <span style='color:{COLOR_ACCENT}'>2026</span>
-            </h1>
-            
-            <div style='
-                height: 4px; 
-                width: 60px; 
-                background-color: {COLOR_ACCENT}; 
-                margin: 15px 0; 
-                border-radius: 2px;
-            '></div>
-            
-            <p style='
-                margin: 0; 
-                font-size: 1rem; 
-                color: {COLOR_TEXT}; 
-                opacity: 0.8; 
-                font-family: monospace;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            '>
-                {icon_github} Baza danych: GitHub Repository
-            </p>
-        </div>
+    # 2. Budowa HTML (korzystamy z nawiasów, Python sam sklei linijki)
+    header_html = (
+        f'<div style="background-color: {COLOR_SEC}; padding: 2rem; border-radius: 16px; '
+        'box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: space-between;">'
         
-        <div style='
-            flex: 0 0 auto; 
-            margin-left: 20px; 
-            opacity: 0.9;
-            transform: scaleX(-1);
-        '>
-            {icon_car}
-        </div>
-    </div>
-    '''
+        # LEWA STRONA (TEKST)
+        '<div style="flex: 1;">'
+        f'<h1 style="color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;">'
+        f'ZWARIOWANA<br>PRZYGODA <span style="color:{COLOR_ACCENT}">2026</span>'
+        '</h1>'
+        
+        # LINIA
+        f'<div style="height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 15px 0; border-radius: 2px;"></div>'
+        
+        # PODPIS GITHUB
+        f'<p style="margin: 0; font-size: 1rem; color: {COLOR_TEXT}; opacity: 0.8; font-family: monospace; display: flex; align-items: center; gap: 8px;">'
+        f'{icon_github} Baza danych: GitHub Repository'
+        '</p>'
+        '</div>'
+        
+        # PRAWA STRONA (AUTO)
+        '<div style="flex: 0 0 auto; margin-left: 20px; opacity: 0.9; transform: scaleX(-1);">'
+        f'{icon_car}'
+        '</div>'
+        
+        '</div>'
+    )
 
+    # 3. Renderowanie
     st.markdown(header_html, unsafe_allow_html=True)
 
 with col_settings:
