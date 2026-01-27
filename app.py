@@ -8,7 +8,7 @@ import io
 # --- KONFIGURACJA POCZĄTKOWA ---
 DEFAULT_START_DATE = date(2026, 7, 24)
 DEFAULT_DAYS = 14
-DEFAULT_PEOPLE = 12 # Domyślna liczba osób
+DEFAULT_PEOPLE = 12 
 SZEROKOSC_KOLUMNY_DZIEN = 100 
 NAZWA_PLIKU_BAZY = "data.csv"
 
@@ -19,7 +19,6 @@ if 'config_start_date' not in st.session_state:
     st.session_state.config_start_date = DEFAULT_START_DATE
 if 'config_days' not in st.session_state:
     st.session_state.config_days = DEFAULT_DAYS
-# Nowa zmienna w sesji: Liczba Osób
 if 'config_people' not in st.session_state:
     st.session_state.config_people = DEFAULT_PEOPLE
 
@@ -31,6 +30,8 @@ st.markdown(
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
     div.stButton > button:first-child { height: 3em; margin-top: 1.5em; }
     [data-testid="stMetricValue"] { font-size: 3rem; color: #FF4B4B; }
+    /* Wyróżnienie sekcji kosztów wspólnych */
+    .st-emotion-cache-16txtl3 { padding: 20px; border-radius: 10px; background-color: #f9f9f9; }
     </style>
     """,
     unsafe_allow_html=True
@@ -53,7 +54,6 @@ def get_data(repo):
     try:
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
         csv_content = contents.decoded_content.decode("utf-8")
-        # Definiujemy pełną strukturę kolumn (z nowym Typ_Kosztu)
         expected_columns = ['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu']
         
         if not csv_content:
@@ -61,19 +61,14 @@ def get_data(repo):
         
         df = pd.read_csv(io.StringIO(csv_content))
         
-        # Konwersja dat
         if 'Start' in df.columns:
             df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns:
             df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
             
-        # --- MIGRACJA DANYCH ---
-        # 1. Dodajemy kolumnę Koszt (jeśli brak)
+        # Migracja
         if 'Koszt' not in df.columns:
             df['Koszt'] = 0.0
-            
-        # 2. Dodajemy kolumnę Typ_Kosztu (jeśli brak) - to jest nowość!
-        # Domyślnie wszystko co już masz, uznajemy za 'Indywidualny' (bo to są atrakcje z kalendarza)
         if 'Typ_Kosztu' not in df.columns:
             df['Typ_Kosztu'] = 'Indywidualny'
             
@@ -101,18 +96,16 @@ if repo:
 else:
     st.stop()
 
-# --- DIALOG USTAWIEŃ (ZAKTUALIZOWANY) ---
+# --- DIALOG USTAWIEŃ ---
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
     st.write("Ustawienia globalne")
-    
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
-    with col2:
+    with c2:
         new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
     
-    # NOWE POLE: LICZBA OSÓB
     st.divider()
     st.write("💰 Rozliczenia")
     new_people = st.number_input("Liczba uczestników (do podziału kosztów stałych):", 
@@ -121,7 +114,7 @@ def settings_dialog():
     if st.button("Zapisz", type="primary"):
         st.session_state.config_start_date = new_date
         st.session_state.config_days = new_days
-        st.session_state.config_people = new_people # Zapisujemy liczbę osób
+        st.session_state.config_people = new_people
         st.rerun()
 
 # --- HEADER ---
@@ -145,8 +138,7 @@ st.divider()
 # --- HELPERY ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
-    # Filtrujemy tylko te, które są 'Indywidualny' (żeby koszty stałe nie wchodziły na siatkę przypadkiem)
-    # Chociaż na razie mamy tylko indywidualne, to zabezpieczenie na przyszłość.
+    # Tylko Indywidualne wchodzą na siatkę kalendarza
     mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
     zaplanowane = df[mask]
     
@@ -181,9 +173,13 @@ def generuj_tlo_widoku(start_date, num_days):
             })
     return pd.DataFrame(tlo_data)
 
-# --- ZAKŁADKI ---
-# Na razie bez zmian w interfejsie zakładek
-tab_edytor, tab_kalendarz, tab_koszty = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz", "💰 Podsumowanie Kosztów"])
+# --- ZAKŁADKI (DODANO NOWĄ: KOSZTY WSPÓLNE) ---
+tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
+    "📝 Edytor i Giełda", 
+    "📅 Kalendarz", 
+    "💸 Koszty Wspólne", 
+    "💰 Podsumowanie"
+])
 
 # ==========================================
 # ZAKŁADKA 1: EDYTOR
@@ -191,7 +187,7 @@ tab_edytor, tab_kalendarz, tab_koszty = st.tabs(["📝 Edytor i Giełda", "📅 
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        st.subheader("Dodaj nowy element")
+        st.subheader("Dodaj atrakcję (Indywidualne)")
         with st.form("dodawanie_form", clear_on_submit=True):
             tytul = st.text_input("Tytuł")
             kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
@@ -209,7 +205,7 @@ with tab_edytor:
                     'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
                     'Start': None, 'Koniec': None, 'Zaplanowane': False,
                     'Koszt': float(koszt),
-                    'Typ_Kosztu': 'Indywidualny' # Domyślnie dodajemy jako Indywidualny (do Kalendarza)
+                    'Typ_Kosztu': 'Indywidualny' 
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                 if update_data(repo, updated_df):
@@ -218,7 +214,6 @@ with tab_edytor:
 
     with col_b:
         st.subheader("📦 Giełda pomysłów")
-        # Pokazujemy tylko Indywidualne na giełdzie (bo koszty stałe będą w innej zakładce)
         mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
                               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         
@@ -288,7 +283,6 @@ with tab_kalendarz:
         if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
         if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
 
-        # Filtrujemy tylko niezaplanowane i TYLKO Indywidualne
         mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
                      (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         niezaplanowane = st.session_state.db[mask_przyb]
@@ -340,12 +334,92 @@ with tab_kalendarz:
         else: st.info("Kalendarz pusty.")
 
 # ==========================================
-# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (BEZ ZMIAN NA RAZIE)
+# ZAKŁADKA 3: KOSZTY WSPÓLNE (NOWA!)
 # ==========================================
-with tab_koszty:
+with tab_wspolne:
+    col_fixed, col_fuel = st.columns(2)
+    
+    # --- LEWA: KOSZTY STAŁE ---
+    with col_fixed:
+        st.markdown("### 🏨 Noclegi i Opłaty")
+        with st.form("form_wspolne", clear_on_submit=True):
+            nazwa = st.text_input("Nazwa (np. Oli House, Winiety)")
+            kategoria_wsp = st.selectbox("Rodzaj", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
+            koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
+            
+            if st.form_submit_button("Dodaj do wspólnych"):
+                if nazwa and koszt_calosc > 0:
+                    nowy = pd.DataFrame([{
+                        'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 
+                        'Start': None, 'Koniec': None, 'Zaplanowane': False,
+                        'Koszt': float(koszt_calosc),
+                        'Typ_Kosztu': 'Wspólny' # Oznaczamy jako wspólny
+                    }])
+                    updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
+                    if update_data(repo, updated_df):
+                        st.success(f"Dodano {nazwa}!")
+                        st.rerun()
+                else:
+                    st.error("Wpisz nazwę i kwotę.")
+
+    # --- PRAWA: KALKULATOR PALIWA ---
+    with col_fuel:
+        st.markdown("### ⛽ Kalkulator Trasy")
+        with st.container(border=True):
+            auto_nazwa = st.text_input("Auto (np. BMW, Bus)", value="BMW")
+            dystans = st.slider("Dystans (km)", 0, 6000, 3400, step=50)
+            spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.5)
+            cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.1)
+            
+            # Wynik na żywo
+            koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
+            st.markdown(f"**Szacowany koszt:** :red[{koszt_trasy:.2f} PLN]")
+            
+            if st.button("➕ Dodaj auto do rozliczenia"):
+                tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
+                nowy = pd.DataFrame([{
+                    'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 
+                    'Start': None, 'Koniec': None, 'Zaplanowane': False,
+                    'Koszt': float(koszt_trasy),
+                    'Typ_Kosztu': 'Paliwo' # Oznaczamy jako Paliwo (też wspólne)
+                }])
+                updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
+                if update_data(repo, updated_df):
+                    st.success(f"Dodano {auto_nazwa}!")
+                    st.rerun()
+
+    st.divider()
+    st.markdown("### 📋 Lista dodanych kosztów wspólnych")
+    
+    # Filtrujemy tylko Wspólne i Paliwo
+    mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
+    df_wspolne = st.session_state.db[mask_wspolne]
+    
+    if not df_wspolne.empty:
+        event = st.dataframe(
+            df_wspolne[['Tytuł', 'Kategoria', 'Typ_Kosztu', 'Koszt']],
+            use_container_width=True, hide_index=True,
+            selection_mode="multi-row", on_select="rerun",
+            column_config={
+                "Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")
+            }
+        )
+        if event.selection.rows:
+            if st.button("🗑️ Usuń wybrane koszty wspólne", type="primary"):
+                 with st.spinner("Usuwam..."):
+                    indeksy = df_wspolne.iloc[event.selection.rows].index
+                    updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
+                    if update_data(repo, updated_df):
+                        st.rerun()
+    else:
+        st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
+
+# ==========================================
+# ZAKŁADKA 4: PODSUMOWANIE (BEZ ZMIAN MATEMATYKI NA RAZIE)
+# ==========================================
+with tab_podsumowanie:
     st.subheader("💸 Ile to będzie kosztować?")
     
-    # Filtrujemy tylko Zaplanowane i tylko Indywidualne (stara logika, nową dodamy w kolejnym kroku)
     mask_koszty = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                   (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     
