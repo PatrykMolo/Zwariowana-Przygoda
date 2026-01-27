@@ -597,7 +597,7 @@ with st.sidebar:
     
     # WAŻNE: Tu wklej link, który widzisz w pasku przeglądarki!
     # Np. "https://moj-trip-2026.streamlit.app"
-    app_url = "https://zwariowana-przygoda-xpv9pfudbkjrgdpgwu2zp9.streamlit.app/" 
+    app_url = "https://zwariowanyplanner.streamlit.app" 
     
     # Przygotowanie kolorów do API (bez znaku #)
     qr_color = COLOR_ACCENT.lstrip('#') 
