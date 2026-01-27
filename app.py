@@ -363,13 +363,19 @@ with tab_wspolne:
                     st.error("Wpisz nazwę i kwotę.")
 
     # --- PRAWA: KALKULATOR PALIWA ---
+    # --- PRAWA: KALKULATOR PALIWA ---
     with col_fuel:
         st.markdown("### ⛽ Kalkulator Trasy")
         with st.container(border=True):
-            auto_nazwa = st.text_input("Auto (np. BMW, Bus)", value="BMW")
-            dystans = st.slider("Dystans (km)", 0, 6000, 3400, step=50)
-            spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.5)
-            cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.1)
+            auto_nazwa = st.text_input("Auto", value="BMW")
+            
+            # ZMIANA: Zamiast slidera mamy number_input
+            dystans = st.number_input("Dystans (km)", min_value=0, value=3400, step=10)
+            
+            # Spalanie i Cenę zostawiamy na suwakach, bo tu fajnie się "symuluje" zmiany,
+            # ale jeśli też wolisz wpisywać, daj znać!
+            spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.1)
+            cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.01)
             
             # Wynik na żywo
             koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
@@ -381,7 +387,7 @@ with tab_wspolne:
                     'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 
                     'Start': None, 'Koniec': None, 'Zaplanowane': False,
                     'Koszt': float(koszt_trasy),
-                    'Typ_Kosztu': 'Paliwo' # Oznaczamy jako Paliwo (też wspólne)
+                    'Typ_Kosztu': 'Paliwo'
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                 if update_data(repo, updated_df):
