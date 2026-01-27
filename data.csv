@@ -1,13 +1,10 @@
 Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
 Kraków - Alba Iulia,Trasa,11.0,2026-07-25 04:00:00,2026-07-25 15:00:00,True,0.0,Indywidualny
 Salina Turda,Atrakcja,3.0,2026-07-25 16:00:00,2026-07-25 19:00:00,True,40.0,Indywidualny
-burger king,Odpoczynek,2.0,,2026-07-28 15:00:00,False,30.0,Indywidualny
 Paliwo: BMW (3400km),Trasa,0.0,,,False,1122.0,Paliwo
 Paliwo: Citroen SpaceTourer (3400km),Trasa,0.0,,,False,1734.0,Paliwo
 Casa Di Mare,Nocleg,0.0,,,False,3700.0,Wspólny
 Hillside Guesthouse,Nocleg,0.0,,,False,2600.0,Wspólny
 Citroen Wynajem,Wynajem Busa,0.0,,,False,2750.0,Wspólny
-Chowany z rysiem cygańskim,Atrakcja,1.5,,2026-07-30 11:30:00,False,0.0,Indywidualny
-Zwiedzanie ,Atrakcja,2.0,,2026-07-27 12:00:00,False,40.0,Indywidualny
 Winiety BMW,Winiety,0.0,,,False,201.0,Wspólny
 Winiety Citroen,Winiety,0.0,,,False,235.0,Wspólny
