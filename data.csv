@@ -1,6 +1,6 @@
 Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
 Kraków - Alba Iulia,Trasa,11.0,2026-07-25 04:00:00,2026-07-25 15:00:00,True,0.0,Indywidualny
-Salina Turda,Atrakcja,3.0,,2026-07-25 19:00:00,False,40.0,Indywidualny
+Salina Turda,Atrakcja,3.0,2026-07-25 15:00:00,2026-07-25 18:00:00,True,40.0,Indywidualny
 Paliwo: BMW (3400km),Trasa,0.0,,,False,1122.0,Paliwo
 Paliwo: Citroen SpaceTourer (3400km),Trasa,0.0,,,False,1734.0,Paliwo
 Casa Di Mare,Nocleg,0.0,,,False,3700.0,Wspólny
