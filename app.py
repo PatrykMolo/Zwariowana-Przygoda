@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime, timedelta, date, time
-from github import Github
+from github import Github, Auth # <--- ZMIANA 1: Dodany import Auth
 import io
 
 # --- KONFIGURACJA ---
 DATA_STARTU_WYJAZDU = date(2026, 7, 24)
 DLUGOSC_WYJAZDU_DNI = 14
-SZEROKOSC_KOLUMNY_DZIEN = 100 # Piksele na jeden dzień (dla scrollowania)
+SZEROKOSC_KOLUMNY_DZIEN = 100 
 NAZWA_PLIKU_BAZY = "data.csv"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
@@ -17,9 +17,7 @@ st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 st.markdown(
     """
     <style>
-    /* Ładniejszy nagłówek */
     .block-container { padding-top: 2rem; }
-    /* Stylizacja checkboxów filtrujących, żeby były bliżej siebie */
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
     </style>
     <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center; margin-bottom: 2rem;'>
@@ -30,12 +28,14 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- ŁĄCZENIE Z GITHUBEM ---
+# --- ŁĄCZENIE Z GITHUBEM (NAPRAWIONE OSTRZEŻENIE) ---
 def init_github():
     try:
         token = st.secrets["github"]["token"]
         repo_name = st.secrets["github"]["repo_name"]
-        g = Github(token)
+        # <--- ZMIANA 2: Nowy sposób autoryzacji
+        auth = Auth.Token(token)
+        g = Github(auth=auth) 
         repo = g.get_repo(repo_name)
         return repo
     except Exception as e:
@@ -147,7 +147,9 @@ with tab_edytor:
         if not do_pokazania.empty:
             event = st.dataframe(
                 do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)']], 
-                use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
+                # ZMIANA: używamy 'width' zamiast 'use_container_width' (choć w dataframe to wciąż działa, to dla spójności zostawiam domyślne)
+                use_container_width=True, 
+                on_select="rerun", selection_mode="multi-row", hide_index=True
             )
             if event.selection.rows:
                 if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
@@ -160,21 +162,17 @@ with tab_edytor:
             st.info("Brak niezaplanowanych elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (PEŁNA SZEROKOŚĆ)
+# ZAKŁADKA 2: KALENDARZ (POPRAWIONA)
 # ==========================================
 with tab_kalendarz:
     
-    # --- SEKCJA GÓRNA: TYLKO WYKRES ---
     background_df = generuj_tlo_widoku(DATA_STARTU_WYJAZDU, DLUGOSC_WYJAZDU_DNI)
     full_df = przygotuj_dane_do_siatki(st.session_state.db)
     
     domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
     range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
-
-    # Obliczamy szerokość - na tyle dużą, żeby zawsze był scroll
     total_width = DLUGOSC_WYJAZDU_DNI * SZEROKOSC_KOLUMNY_DZIEN
 
-    # CSS do scrolla tylko dla tego wykresu
     st.markdown(
         """
         <style>
@@ -216,25 +214,25 @@ with tab_kalendarz:
         )
         
         final_chart = (layer_bg + layer_rects + layer_text).properties(
-            height=600, # Trochę niższy, żeby było widać narzędzia
+            height=600,
             width=total_width
         )
     else:
         final_chart = layer_bg.properties(height=600, width=total_width)
 
-    # Wyświetlamy wykres na pełnej szerokości
-    st.altair_chart(final_chart, use_container_width=False)
+    # <--- ZMIANA 3: Usunięto use_container_width=False
+    # Ponieważ ustawiliśmy sztywną szerokość w Altair (.properties(width=...)), 
+    # Streamlit sam z siebie wyświetli to w oryginalnym rozmiarze i doda scrollbar.
+    st.altair_chart(final_chart)
 
     st.divider()
 
-    # --- SEKCJA DOLNA: STEROWANIE ---
     col_tools_left, col_tools_right = st.columns([1, 1])
 
     # LEWA STRONA: PRZYBORNIK (DODAWANIE)
     with col_tools_left:
         st.subheader("📌 Przybornik (Dodaj)")
         
-        # 1. Filtrowanie kategorii
         st.write("Filtruj listę:")
         c1, c2, c3 = st.columns(3)
         filtry = []
@@ -242,13 +240,12 @@ with tab_kalendarz:
         if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
         if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
 
-        # Pobranie niezaplanowanych
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
         niezaplanowane = st.session_state.db[niezaplanowane_mask]
 
-        # Zastosowanie filtra
-        if not nezaplanowane.empty:
-            filtrowane_df = nezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
+        # <--- ZMIANA 4: Poprawiona literówka (nezaplanowane -> niezaplanowane)
+        if not niezaplanowane.empty:
+            filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
             
             if not filtrowane_df.empty:
                 opcje = filtrowane_df['Tytuł'].tolist()
@@ -257,7 +254,6 @@ with tab_kalendarz:
                 
                 st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Kat: {info['Kategoria']}")
                 
-                # Daty i godziny obok siebie
                 col_d, col_h = st.columns(2)
                 with col_d:
                     wybrana_data = st.date_input("Dzień:", value=DATA_STARTU_WYJAZDU, 
@@ -290,17 +286,12 @@ with tab_kalendarz:
         zaplanowane = st.session_state.db[zaplanowane_mask]
         
         if not zaplanowane.empty:
-            # Sortujemy listę, żeby łatwiej było znaleźć
             zaplanowane_sorted = zaplanowane.sort_values(by='Start')
-            # Tworzymy etykiety z datą, żeby było wiadomo co usuwamy
             opcje_usuwania = zaplanowane_sorted.apply(
                 lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1
             ).tolist()
             
-            # Musimy mapować z powrotem na tytuł
             wybrany_do_usuniecia_opis = st.selectbox("Wybierz zaplanowany element:", opcje_usuwania)
-            # Wyciągamy sam tytuł (zakładając że tytuł nie ma nawiasów z datą, proste podejście)
-            # Bezpieczniej: mapowanie po indeksie
             if wybrany_do_usuniecia_opis:
                 oryginalny_tytul = zaplanowane_sorted.iloc[opcje_usuwania.index(wybrany_do_usuniecia_opis)]['Tytuł']
             
