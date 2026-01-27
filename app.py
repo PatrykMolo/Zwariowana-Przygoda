@@ -302,61 +302,67 @@ with tab_kalendarz:
         else: st.info("Kalendarz pusty.")
 
 # ==========================================
-# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (NOWOŚĆ)
+# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (NAPRAWIONY WYKRES)
 # ==========================================
 with tab_koszty:
     st.subheader("💸 Ile to będzie kosztować?")
     
-    # 1. Filtrowanie danych (Tylko Zaplanowane)
-    df_costs = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'].copy()
+    # 1. Filtrowanie (Tylko Zaplanowane)
+    zaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'
+    df_costs = st.session_state.db[zaplanowane_mask].copy()
     
-    # Upewniamy się, że kolumna Koszt jest liczbą (gdyby coś poszło nie tak)
+    # Zabezpieczenie: konwersja kosztu na liczbę
     df_costs['Koszt'] = pd.to_numeric(df_costs['Koszt'], errors='coerce').fillna(0)
     
     if not df_costs.empty:
-        # Layout: Lewa (KPI + Tabela) vs Prawa (Wykres)
         col_kpi, col_chart = st.columns([1, 2])
         
         with col_kpi:
-            # A. DATA CARD (SUMA)
+            # A. KPI
             total_cost = df_costs['Koszt'].sum()
             st.metric(label="Całkowity koszt wyjazdu", value=f"{total_cost:.2f} PLN")
             
             st.divider()
             
-            # B. TABELA (Tylko koszty > 0)
-            tabela_kosztow = df_costs[df_costs['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
+            # B. TABELA
+            tabela = df_costs[df_costs['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
             
-            if not tabela_kosztow.empty:
+            if not tabela.empty:
                 st.write("**Szczegóły wydatków:**")
                 st.dataframe(
-                    tabela_kosztow, 
+                    tabela, 
                     use_container_width=True, 
                     hide_index=True,
                     column_config={
-                        "Koszt": st.column_config.NumberColumn("Koszt (PLN)", format="%.2f zł")
+                        "Koszt": st.column_config.NumberColumn("Koszt", format="%.2f zł")
                     }
                 )
             else:
-                st.info("Brak pozycji z przypisanym kosztem w kalendarzu.")
+                st.info("Brak płatnych atrakcji.")
                 
         with col_chart:
-            # C. BAR CHART (Koszty w czasie)
             st.write("**📅 Rozkład wydatków w czasie**")
             
-            # Grupujemy po dniu
-            # Tworzymy kolumnę 'Data' (sam dzień, bez godziny)
-            df_costs['Data'] = df_costs['Start'].dt.date
+            # 1. Tworzymy kolumnę z samą datą (obiekt date)
+            df_costs['Data_Sort'] = df_costs['Start'].dt.date
             
-            # Agregacja
-            daily_costs = df_costs.groupby('Data')['Koszt'].sum().reset_index()
+            # 2. Grupujemy i sumujemy koszty dla każdego dnia
+            daily_costs = df_costs.groupby('Data_Sort')['Koszt'].sum().reset_index()
             
-            # Wykres Altair
-            bar_chart = alt.Chart(daily_costs).mark_bar(color='#FF4B4B').encode(
-                x=alt.X('Data:T', title='Dzień', axis=alt.Axis(format='%d.%m')),
+            # 3. WYKRES (ZMIANA: Data:O zamiast Data:T)
+            bar_chart = alt.Chart(daily_costs).mark_bar(
+                color='#FF4B4B',
+                cornerRadiusTopLeft=3,     # Opcjonalnie: zaokrąglone rogi słupków
+                cornerRadiusTopRight=3
+            ).encode(
+                # Używamy :O (Ordinal) - to traktuje daty jak dyskretne kategorie (klocki)
+                # Dzięki temu słupek zajmuje pełną szerokość dnia
+                x=alt.X('Data_Sort:O', 
+                        title='Dzień', 
+                        axis=alt.Axis(format='%d.%m', labelAngle=0)), 
                 y=alt.Y('Koszt:Q', title='Suma (PLN)'),
                 tooltip=[
-                    alt.Tooltip('Data:T', format='%d.%m.%Y', title='Data'), 
+                    alt.Tooltip('Data_Sort:O', format='%d.%m.%Y', title='Data'), 
                     alt.Tooltip('Koszt:Q', format='.2f', title='Kwota')
                 ]
             ).properties(height=400)
