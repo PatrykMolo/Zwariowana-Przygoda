@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -9,21 +8,19 @@ import io
 # --- KONFIGURACJA ---
 DATA_STARTU_WYJAZDU = date(2026, 7, 24)
 DLUGOSC_WYJAZDU_DNI = 14
-SZEROKOSC_KOLUMNY_DZIEN = 160 # Piksele na jeden dzień (reguluje "zoom")
+SZEROKOSC_KOLUMNY_DZIEN = 100 # Piksele na jeden dzień (dla scrollowania)
 NAZWA_PLIKU_BAZY = "data.csv"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
 # --- CSS ---
-# Dodajemy też stylizację paska przewijania, żeby był ładniejszy
 st.markdown(
     """
     <style>
-    /* Stylizacja kontenera wykresu, żeby scroll był widoczny */
-    [data-testid="stAltairChart"] {
-        overflow-x: auto;
-        padding-bottom: 10px;
-    }
+    /* Ładniejszy nagłówek */
+    .block-container { padding-top: 2rem; }
+    /* Stylizacja checkboxów filtrujących, żeby były bliżej siebie */
+    div[data-testid="stCheckbox"] { margin-bottom: -10px; }
     </style>
     <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center; margin-bottom: 2rem;'>
         <h1 style='color: #0E1117; margin:0; font-size: 3rem;'>🚗 Zwariowana Przygoda 2026</h1>
@@ -76,7 +73,6 @@ repo = init_github()
 if repo:
     if 'db' not in st.session_state:
         st.session_state.db = get_data(repo)
-    # Odświeżamy dane (synchronizacja)
     st.session_state.db = get_data(repo)
 else:
     st.stop()
@@ -93,7 +89,7 @@ def przygotuj_dane_do_siatki(df):
         for i, godzina_bloku in enumerate(zakres_godzin):
             label = row['Tytuł'] if i == 0 else "" 
             grid_data.append({
-                'DataFull': godzina_bloku, # Data datetime do sortowania
+                'DataFull': godzina_bloku,
                 'Dzień': godzina_bloku.strftime('%d.%m'),
                 'Godzina': godzina_bloku.hour,
                 'Tytuł_Display': label,
@@ -144,7 +140,7 @@ with tab_edytor:
                     st.rerun()
 
     with col_b:
-        st.subheader("📦 Giełda pomysłów (Niezaplanowane)")
+        st.subheader("📦 Giełda pomysłów")
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
         do_pokazania = st.session_state.db[niezaplanowane_mask]
         
@@ -164,127 +160,156 @@ with tab_edytor:
             st.info("Brak niezaplanowanych elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (SCROLLABLE)
-# ==========================================
-# ==========================================
-# ZAKŁADKA 2: KALENDARZ (BEZPIECZNY SCROLL)
+# ZAKŁADKA 2: KALENDARZ (PEŁNA SZEROKOŚĆ)
 # ==========================================
 with tab_kalendarz:
-    col_wykres, col_narzedzia = st.columns([3, 1])
+    
+    # --- SEKCJA GÓRNA: TYLKO WYKRES ---
+    background_df = generuj_tlo_widoku(DATA_STARTU_WYJAZDU, DLUGOSC_WYJAZDU_DNI)
+    full_df = przygotuj_dane_do_siatki(st.session_state.db)
+    
+    domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
+    range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
 
-    # --- PRAWY PANEL: NARZĘDZIA (Bez zmian) ---
-    with col_narzedzia:
-        st.markdown("### 📌 Przybornik")
-        # Filtrowanie tylko dla bezpieczeństwa
+    # Obliczamy szerokość - na tyle dużą, żeby zawsze był scroll
+    total_width = DLUGOSC_WYJAZDU_DNI * SZEROKOSC_KOLUMNY_DZIEN
+
+    # CSS do scrolla tylko dla tego wykresu
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAltairChart"] {
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    base = alt.Chart(background_df).encode(
+        x=alt.X('Dzień:O', 
+                sort=alt.EncodingSortField(field="DataFull", order="ascending"),
+                axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
+        y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
+    )
+    
+    layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(
+        color=alt.value('white'),
+        tooltip=['Dzień', 'Godzina']
+    )
+
+    if not full_df.empty:
+        chart_data = alt.Chart(full_df).encode(
+            x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
+            y=alt.Y('Godzina:O'),
+            tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
+        )
+        
+        layer_rects = chart_data.mark_rect(stroke='white', strokeWidth=0.5).encode(
+            color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
+        )
+        
+        layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=SZEROKOSC_KOLUMNY_DZIEN-5).encode(
+            text=alt.Text('Tytuł_Display'), 
+            color=alt.value('#333333')
+        )
+        
+        final_chart = (layer_bg + layer_rects + layer_text).properties(
+            height=600, # Trochę niższy, żeby było widać narzędzia
+            width=total_width
+        )
+    else:
+        final_chart = layer_bg.properties(height=600, width=total_width)
+
+    # Wyświetlamy wykres na pełnej szerokości
+    st.altair_chart(final_chart, use_container_width=False)
+
+    st.divider()
+
+    # --- SEKCJA DOLNA: STEROWANIE ---
+    col_tools_left, col_tools_right = st.columns([1, 1])
+
+    # LEWA STRONA: PRZYBORNIK (DODAWANIE)
+    with col_tools_left:
+        st.subheader("📌 Przybornik (Dodaj)")
+        
+        # 1. Filtrowanie kategorii
+        st.write("Filtruj listę:")
+        c1, c2, c3 = st.columns(3)
+        filtry = []
+        if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
+        if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
+        if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
+
+        # Pobranie niezaplanowanych
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
         niezaplanowane = st.session_state.db[niezaplanowane_mask]
-        
-        if not niezaplanowane.empty:
-            opcje = niezaplanowane['Tytuł'].tolist()
-            wybrany = st.selectbox("Wybierz klocek:", opcje)
-            info = niezaplanowane[niezaplanowane['Tytuł'] == wybrany].iloc[0]
+
+        # Zastosowanie filtra
+        if not nezaplanowane.empty:
+            filtrowane_df = nezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
             
-            st.info(f"⏳ **{int(float(info['Czas (h)']))}h** | {info['Kategoria']}")
-            
-            wybrana_data = st.date_input("Dzień:", value=DATA_STARTU_WYJAZDU, 
-                                         min_value=DATA_STARTU_WYJAZDU, 
-                                         max_value=DATA_STARTU_WYJAZDU + timedelta(days=DLUGOSC_WYJAZDU_DNI))
-            wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
-            
-            if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
-                with st.spinner("Aktualizuję..."):
-                    start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
-                    end_dt = start_dt + timedelta(hours=float(info['Czas (h)']))
-                    idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
-                    st.session_state.db.at[idx, 'Start'] = start_dt
-                    st.session_state.db.at[idx, 'Koniec'] = end_dt
-                    st.session_state.db.at[idx, 'Zaplanowane'] = True
-                    if update_data(repo, st.session_state.db):
-                        st.success("Zapisano!")
-                        st.rerun()
+            if not filtrowane_df.empty:
+                opcje = filtrowane_df['Tytuł'].tolist()
+                wybrany = st.selectbox("Wybierz element:", opcje)
+                info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
+                
+                st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Kat: {info['Kategoria']}")
+                
+                # Daty i godziny obok siebie
+                col_d, col_h = st.columns(2)
+                with col_d:
+                    wybrana_data = st.date_input("Dzień:", value=DATA_STARTU_WYJAZDU, 
+                                                 min_value=DATA_STARTU_WYJAZDU, 
+                                                 max_value=DATA_STARTU_WYJAZDU + timedelta(days=DLUGOSC_WYJAZDU_DNI))
+                with col_h:
+                    wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
+                
+                if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
+                    with st.spinner("Aktualizuję..."):
+                        start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
+                        end_dt = start_dt + timedelta(hours=float(info['Czas (h)']))
+                        idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
+                        st.session_state.db.at[idx, 'Start'] = start_dt
+                        st.session_state.db.at[idx, 'Koniec'] = end_dt
+                        st.session_state.db.at[idx, 'Zaplanowane'] = True
+                        if update_data(repo, st.session_state.db):
+                            st.success("Zapisano!")
+                            st.rerun()
+            else:
+                st.warning("Brak elementów w wybranych kategoriach.")
         else:
-            st.success("Wszystko zaplanowane!")
-            
-        st.divider()
+            st.success("Pusto w poczekalni! Wszystko zaplanowane.")
+
+    # PRAWA STRONA: USUWANIE (ZDEJMOWANIE)
+    with col_tools_right:
+        st.subheader("🗑️ Zdejmowanie z planu")
+        
         zaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'
         zaplanowane = st.session_state.db[zaplanowane_mask]
+        
         if not zaplanowane.empty:
-            do_zdjecia = st.selectbox("Edytuj plan:", zaplanowane['Tytuł'].tolist())
-            if st.button("↩️ Zdejmij z kalendarza", use_container_width=True):
-                with st.spinner("Zdejmuję..."):
-                    idx = st.session_state.db[st.session_state.db['Tytuł'] == do_zdjecia].index[0]
-                    st.session_state.db.at[idx, 'Zaplanowane'] = False
-                    st.session_state.db.at[idx, 'Start'] = None
-                    if update_data(repo, st.session_state.db):
-                        st.rerun()
-
-    # --- LEWY PANEL: WYKRES ---
-    with col_wykres:
-        background_df = generuj_tlo_widoku(DATA_STARTU_WYJAZDU, DLUGOSC_WYJAZDU_DNI)
-        full_df = przygotuj_dane_do_siatki(st.session_state.db)
-        
-        domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
-        range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
-
-        # OBLICZAMY SZEROKOŚĆ (Bez wymuszania CSSem na siłę)
-        # Zmniejszyłem do 100px, żeby na Desktopie widok był mniej "agresywny",
-        # ale na tyle szeroki, by na telefonie wymusić scroll.
-        pixel_per_day = 100 
-        total_width = DLUGOSC_WYJAZDU_DNI * pixel_per_day
-
-        # Dodajemy delikatny CSS tylko po to, żeby pasek przewijania był zawsze widoczny
-        # i żeby wykres nie wychodził poza swoją kolumnę (overflow-x: auto)
-        st.markdown(
-            """
-            <style>
-            [data-testid="stAltairChart"] {
-                overflow-x: auto;
-                padding-bottom: 10px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        base = alt.Chart(background_df).encode(
-            x=alt.X('Dzień:O', 
-                    sort=alt.EncodingSortField(field="DataFull", order="ascending"),
-                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
-            y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
-        )
-        
-        layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(
-            color=alt.value('white'),
-            tooltip=['Dzień', 'Godzina']
-        )
-
-        if not full_df.empty:
-            chart_data = alt.Chart(full_df).encode(
-                x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
-                y=alt.Y('Godzina:O'),
-                tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
-            )
+            # Sortujemy listę, żeby łatwiej było znaleźć
+            zaplanowane_sorted = zaplanowane.sort_values(by='Start')
+            # Tworzymy etykiety z datą, żeby było wiadomo co usuwamy
+            opcje_usuwania = zaplanowane_sorted.apply(
+                lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1
+            ).tolist()
             
-            layer_rects = chart_data.mark_rect(stroke='white', strokeWidth=0.5).encode(
-                color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
-            )
+            # Musimy mapować z powrotem na tytuł
+            wybrany_do_usuniecia_opis = st.selectbox("Wybierz zaplanowany element:", opcje_usuwania)
+            # Wyciągamy sam tytuł (zakładając że tytuł nie ma nawiasów z datą, proste podejście)
+            # Bezpieczniej: mapowanie po indeksie
+            if wybrany_do_usuniecia_opis:
+                oryginalny_tytul = zaplanowane_sorted.iloc[opcje_usuwania.index(wybrany_do_usuniecia_opis)]['Tytuł']
             
-            layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=pixel_per_day-5).encode(
-                text=alt.Text('Tytuł_Display'), 
-                color=alt.value('#333333')
-            )
-            
-            final_chart = (layer_bg + layer_rects + layer_text).properties(
-                height=650,
-                width=total_width # Ustawiamy szerokość w Altair, nie w CSS
-            )
+                if st.button("↩️ Wróć do poczekalni", use_container_width=True):
+                    with st.spinner("Zdejmuję..."):
+                        idx = st.session_state.db[st.session_state.db['Tytuł'] == oryginalny_tytul].index[0]
+                        st.session_state.db.at[idx, 'Zaplanowane'] = False
+                        st.session_state.db.at[idx, 'Start'] = None
+                        if update_data(repo, st.session_state.db):
+                            st.rerun()
         else:
-            final_chart = layer_bg.properties(
-                height=650,
-                width=total_width
-            )
-
-        # Kluczowe: use_container_width=False
-        # Dzięki temu Altair użyje szerokości 1400px (14*100), 
-        # a Streamlit sam doda suwak, jeśli ekran jest węższy (np. na telefonie).
-        st.altair_chart(final_chart, use_container_width=False)
+            st.info("Kalendarz jest pusty.")
