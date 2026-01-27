@@ -6,11 +6,11 @@ from github import Github, Auth
 import io
 import json
 
-# --- TWOJA PALETA KOLORÓW ---
-COLOR_BG = "#002a42"        # Ciemny Granat (Tło)
-COLOR_TEXT = "#f5f8fb"      # Jasny Błękit (Tekst)
-COLOR_ACCENT = "#f49800"    # Pomarańcz (Akcent/Primary)
-COLOR_SEC = "#1b77a6"       # Morski (Secondary)
+# --- TWOJA NOWA PALETA (RETRO DARK) ---
+COLOR_BG = "#1e2630"        # Gunmetal (Ciemne Tło)
+COLOR_TEXT = "#faf9dd"      # Cream (Jasny Tekst)
+COLOR_ACCENT = "#d37759"    # Terracotta (Główny Akcent - Atrakcje/Przyciski)
+COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny - Trasa/Nagłówek) - dodany dla kontrastu
 
 # --- KONFIGURACJA DOMYŚLNA ---
 DEFAULT_CONFIG = {
@@ -25,30 +25,32 @@ NAZWA_PLIKU_CONFIG = "config.json"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
-# --- CSS (STYLIZACJA NAGŁÓWKA I PRZYCISKÓW) ---
+# --- CSS (STYLIZACJA W NOWEJ PALECIE) ---
 st.markdown(
     f"""
     <style>
     .block-container {{ padding-top: 2rem; }}
     /* Checkboxy */
     div[data-testid="stCheckbox"] {{ margin-bottom: -10px; }}
-    /* Przyciski - Pomarańczowy Akcent */
+    
+    /* Przyciski - Ceglasty Akcent */
     div.stButton > button:first-child {{ 
         height: 3em; 
         margin-top: 1.5em; 
         background-color: {COLOR_ACCENT}; 
-        color: {COLOR_BG}; 
+        color: {COLOR_TEXT}; /* Kremowy tekst na cegle */
         border: none;
         font-weight: bold;
     }}
     div.stButton > button:first-child:hover {{
-        background-color: #d68500; /* Lekko ciemniejszy pomarańcz przy najechaniu */
-        color: {COLOR_BG};
+        background-color: #b06045; /* Ciemniejsza cegła przy najechaniu */
+        color: {COLOR_TEXT};
     }}
+    
     /* Duże Liczby (Metrics) */
     [data-testid="stMetricValue"] {{ font-size: 3rem; color: {COLOR_ACCENT}; }}
     
-    /* Zakładki - Akcentowanie */
+    /* Zakładki */
     .stTabs [aria-selected="true"] {{
         color: {COLOR_ACCENT} !important;
         border-bottom-color: {COLOR_ACCENT} !important;
@@ -163,7 +165,7 @@ def settings_dialog():
 # --- HEADER (NOWE KOLORY) ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
 with col_title:
-    # Używamy COLOR_SEC jako tła i COLOR_TEXT jako czcionki
+    # Tło nagłówka w kolorze Secondary (Zgaszony Morski), tekst Kremowy
     st.markdown(
         f"""
         <div style='background-color: {COLOR_SEC}; padding: 1.5rem; border-radius: 10px; text-align: center;'>
@@ -179,7 +181,7 @@ with col_settings:
 
 st.divider()
 
-# --- HELPERY (ZAKTUALIZOWANE O KOLORY DO WYKRESÓW) ---
+# --- HELPERY ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
     mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
@@ -267,7 +269,7 @@ with tab_edytor:
         else: st.info("Brak elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (KOLORY Z PALETY)
+# ZAKŁADKA 2: KALENDARZ (RETRO PALETTE)
 # ==========================================
 with tab_kalendarz:
     current_start_date = st.session_state.config_start_date
@@ -275,8 +277,8 @@ with tab_kalendarz:
     background_df = generuj_tlo_widoku(current_start_date, current_days)
     full_df = przygotuj_dane_do_siatki(st.session_state.db)
     
-    # --- NOWA PALETA DLA GRIDU ---
-    # Atrakcja = Pomarańcz, Trasa = Morski, Odpoczynek = Jasny, Tło = Ciemny
+    # --- PALETA WYKRESU ---
+    # Atrakcja = Cegła, Trasa = Zgaszony Morski, Odpoczynek = Krem, Tło = Ciemny Grafit
     domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
     range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
     
@@ -286,7 +288,7 @@ with tab_kalendarz:
     
     base = alt.Chart(background_df).encode(
         x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
-                axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)), # Kolor etykiet osi
+                axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)),
         y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT))
     )
     layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.2).encode(color=alt.value(COLOR_BG), tooltip=['Dzień', 'Godzina'])
@@ -300,10 +302,12 @@ with tab_kalendarz:
         layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(
             color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
         )
-        # Tekst na klockach w kolorze tła (żeby był czytelny na jasnym i pomarańczowym)
+        # Tekst na klockach - dla kontrastu używamy tła na jasnych i jasnego na ciemnych
+        # Ale dla uproszczenia w retro theme: Ciemny tekst na jasnym/ceglastym tle zazwyczaj wygląda ok
+        # Tu ustawimy COLOR_BG (czyli ciemny grafit)
         layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=SZEROKOSC_KOLUMNY_DZIEN-5).encode(
             text=alt.Text('Tytuł_Display'), 
-            color=alt.value(COLOR_BG) # Ciemny tekst na kolorowych klockach
+            color=alt.value(COLOR_BG) 
         )
         final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
     else:
@@ -425,7 +429,7 @@ with tab_wspolne:
     else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
 # ==========================================
-# ZAKŁADKA 4: PODSUMOWANIE (NOWE KOLORY WYKRESÓW)
+# ZAKŁADKA 4: PODSUMOWANIE (NOWE KOLORY)
 # ==========================================
 with tab_podsumowanie:
     st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
@@ -468,7 +472,7 @@ with tab_podsumowanie:
             total_pie = df_pie['Wartość'].sum()
             df_pie['Procent'] = df_pie['Wartość'] / total_pie
             
-            # Dostosowana paleta dla Pie Chart
+            # Paleta: Cegła, Zgaszony Morski, Krem, Szary
             pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, "gray"])
             
             base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
@@ -476,6 +480,7 @@ with tab_podsumowanie:
                 color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
                 tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f'), alt.Tooltip('Procent', format='.1%')]
             )
+            # Białe etykiety dla czytelności na ciemnym tle
             text = base_pie.mark_text(radius=120, size=14).encode(
                 text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"),
                 color=alt.value(COLOR_TEXT) 
@@ -503,6 +508,7 @@ with tab_podsumowanie:
                         axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)),
                 y=alt.Y('Koszt:Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT))
             )
+            # Słupki w kolorze Ceglastym
             bars = base_bar.mark_bar(color=COLOR_ACCENT, cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                 tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')]
             )
