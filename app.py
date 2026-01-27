@@ -25,27 +25,40 @@ NAZWA_PLIKU_CONFIG = "config.json"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
-# --- CSS (STYLIZACJA Z NOWĄ CZCIONKĄ MONTSERRAT) ---
+# --- CSS (NAPRAWA IKONY SIDEBARA) ---
 st.markdown(
     f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
 
-    html, body, [class*="st-"] {{
+    /* POPRAWKA: Usunęliśmy [class*="st-"], co naprawia ikonę strzałki */
+    html, body {{
+        font-family: 'Montserrat', sans-serif;
+    }}
+    
+    /* Precyzyjniej celujemy w elementy tekstowe, żeby zachować spójność */
+    h1, h2, h3, p, div, span {{
         font-family: 'Montserrat', sans-serif;
     }}
 
     .block-container {{ padding-top: 2rem; }}
     
-    /* Przyciski */
+    /* Checkboxy */
+    div[data-testid="stCheckbox"] {{ margin-bottom: -10px; }}
+    
+    /* Przyciski - Ceglasty Akcent */
     div.stButton > button:first-child {{ 
         height: 3em; 
         margin-top: 1.5em; 
         background-color: {COLOR_ACCENT}; 
-        color: {COLOR_BG}; 
+        color: {COLOR_TEXT}; 
         border: none;
         font-weight: bold;
-        border-radius: 8px; /* Lekko zaokrąglone rogi pasują do Montserrat */
+        border-radius: 8px;
+    }}
+    div.stButton > button:first-child:hover {{
+        background-color: #b06045; 
+        color: {COLOR_TEXT};
     }}
     
     /* Duże Liczby (Metrics) */
@@ -55,9 +68,15 @@ st.markdown(
         font-weight: 700;
     }}
     
-    /* Nagłówek sekcji */
+    /* Nagłówki */
     h1, h2, h3 {{
         font-weight: 700 !important;
+    }}
+    
+    /* Zakładki */
+    .stTabs [aria-selected="true"] {{
+        color: {COLOR_ACCENT} !important;
+        border-bottom-color: {COLOR_ACCENT} !important;
     }}
     </style>
     """,
