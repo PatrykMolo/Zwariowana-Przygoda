@@ -4,23 +4,20 @@ import altair as alt
 from datetime import datetime, timedelta, date, time
 from github import Github, Auth
 import io
+import json # <--- NOWOŚĆ: Do obsługi pliku konfiguracyjnego
 
-# --- KONFIGURACJA POCZĄTKOWA ---
-DEFAULT_START_DATE = date(2026, 7, 24)
-DEFAULT_DAYS = 14
-DEFAULT_PEOPLE = 12 
+# --- KONFIGURACJA DOMYŚLNA (Gdyby plik config.json nie istniał) ---
+DEFAULT_CONFIG = {
+    "start_date": "2026-07-24",
+    "days": 14,
+    "people": 12
+}
+
 SZEROKOSC_KOLUMNY_DZIEN = 100 
 NAZWA_PLIKU_BAZY = "data.csv"
+NAZWA_PLIKU_CONFIG = "config.json" # <--- NOWY PLIK NA GITHUBIE
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
-
-# --- INICJALIZACJA STANU ---
-if 'config_start_date' not in st.session_state:
-    st.session_state.config_start_date = DEFAULT_START_DATE
-if 'config_days' not in st.session_state:
-    st.session_state.config_days = DEFAULT_DAYS
-if 'config_people' not in st.session_state:
-    st.session_state.config_people = DEFAULT_PEOPLE
 
 # --- CSS ---
 st.markdown(
@@ -30,14 +27,13 @@ st.markdown(
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
     div.stButton > button:first-child { height: 3em; margin-top: 1.5em; }
     [data-testid="stMetricValue"] { font-size: 3rem; color: #FF4B4B; }
-    /* Wyróżnienie sekcji kosztów wspólnych */
     .st-emotion-cache-16txtl3 { padding: 20px; border-radius: 10px; background-color: #f9f9f9; }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- GITHUB ---
+# --- GITHUB & OBSŁUGA DANYCH ---
 def init_github():
     try:
         token = st.secrets["github"]["token"]
@@ -50,6 +46,7 @@ def init_github():
         st.error(f"Błąd połączenia z GitHub: {e}")
         return None
 
+# 1. Pobieranie Danych (CSV)
 def get_data(repo):
     try:
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
@@ -65,17 +62,31 @@ def get_data(repo):
             df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns:
             df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
-            
-        # Migracja
-        if 'Koszt' not in df.columns:
-            df['Koszt'] = 0.0
-        if 'Typ_Kosztu' not in df.columns:
-            df['Typ_Kosztu'] = 'Indywidualny'
+        
+        # Migracja kolumn
+        if 'Koszt' not in df.columns: df['Koszt'] = 0.0
+        if 'Typ_Kosztu' not in df.columns: df['Typ_Kosztu'] = 'Indywidualny'
             
         return df.fillna("")
     except Exception:
         return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu'])
 
+# 2. Pobieranie Konfiguracji (JSON) - NOWOŚĆ
+def get_config(repo):
+    try:
+        contents = repo.get_contents(NAZWA_PLIKU_CONFIG)
+        json_content = contents.decoded_content.decode("utf-8")
+        config = json.loads(json_content)
+        # Konwersja daty ze stringa na obiekt date
+        config['start_date'] = datetime.strptime(config['start_date'], "%Y-%m-%d").date()
+        return config
+    except Exception:
+        # Jeśli plik nie istnieje, zwracamy domyślne i konwertujemy datę
+        defaults = DEFAULT_CONFIG.copy()
+        defaults['start_date'] = datetime.strptime(defaults['start_date'], "%Y-%m-%d").date()
+        return defaults
+
+# 3. Zapisywanie Danych (CSV)
 def update_data(repo, df):
     try:
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
@@ -85,21 +96,53 @@ def update_data(repo, df):
         repo.update_file(contents.path, "Update z aplikacji", new_content, contents.sha)
         return True
     except Exception as e:
-        st.error(f"Błąd zapisu: {e}")
+        st.error(f"Błąd zapisu danych: {e}")
         return False
 
+# 4. Zapisywanie Konfiguracji (JSON) - NOWOŚĆ
+def update_config(repo, new_config):
+    try:
+        # Konwersja daty na string przed zapisem
+        save_config = new_config.copy()
+        save_config['start_date'] = save_config['start_date'].strftime("%Y-%m-%d")
+        
+        json_str = json.dumps(save_config, indent=4)
+        
+        try:
+            contents = repo.get_contents(NAZWA_PLIKU_CONFIG)
+            repo.update_file(contents.path, "Update ustawień", json_str, contents.sha)
+        except Exception:
+            # Jeśli plik nie istnieje, tworzymy go
+            repo.create_file(NAZWA_PLIKU_CONFIG, "Init config", json_str)
+            
+        return True
+    except Exception as e:
+        st.error(f"Błąd zapisu ustawień: {e}")
+        return False
+
+# --- INICJALIZACJA ---
 repo = init_github()
 if repo:
+    # Ładujemy Bazę
     if 'db' not in st.session_state:
         st.session_state.db = get_data(repo)
     st.session_state.db = get_data(repo)
+    
+    # Ładujemy Konfigurację (z Chmury!)
+    global_config = get_config(repo)
+    
+    # Aktualizujemy session_state danymi z chmury
+    st.session_state.config_start_date = global_config['start_date']
+    st.session_state.config_days = global_config['days']
+    st.session_state.config_people = global_config['people']
 else:
     st.stop()
 
-# --- DIALOG USTAWIEŃ ---
+# --- DIALOG USTAWIEŃ (TERAZ ZAPISUJE DO CHMURY) ---
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
-    st.write("Ustawienia globalne")
+    st.write("Ustawienia globalne (zmieniają się dla wszystkich!)")
+    
     c1, c2 = st.columns(2)
     with c1:
         new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
@@ -108,14 +151,21 @@ def settings_dialog():
     
     st.divider()
     st.write("💰 Rozliczenia")
-    new_people = st.number_input("Liczba uczestników (do podziału kosztów stałych):", 
-                                 min_value=1, value=st.session_state.config_people)
+    new_people = st.number_input("Liczba uczestników:", min_value=1, value=st.session_state.config_people)
     
-    if st.button("Zapisz", type="primary"):
-        st.session_state.config_start_date = new_date
-        st.session_state.config_days = new_days
-        st.session_state.config_people = new_people
-        st.rerun()
+    if st.button("Zapisz w chmurze", type="primary"):
+        with st.spinner("Aktualizuję konfigurację..."):
+            new_conf_dict = {
+                "start_date": new_date,
+                "days": new_days,
+                "people": new_people
+            }
+            if update_config(repo, new_conf_dict):
+                st.session_state.config_start_date = new_date
+                st.session_state.config_days = new_days
+                st.session_state.config_people = new_people
+                st.success("Zapisano!")
+                st.rerun()
 
 # --- HEADER ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
@@ -135,13 +185,11 @@ with col_settings:
 
 st.divider()
 
-# --- HELPERY ---
+# --- HELPERY (BEZ ZMIAN) ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
-    # Tylko Indywidualne wchodzą na siatkę kalendarza
     mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
     zaplanowane = df[mask]
-    
     for _, row in zaplanowane.iterrows():
         if pd.isna(row['Start']) or row['Start'] == "": continue
         start = row['Start']
@@ -173,7 +221,7 @@ def generuj_tlo_widoku(start_date, num_days):
             })
     return pd.DataFrame(tlo_data)
 
-# --- ZAKŁADKI (DODANO NOWĄ: KOSZTY WSPÓLNE) ---
+# --- ZAKŁADKI ---
 tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
     "📝 Edytor i Giełda", 
     "📅 Kalendarz", 
@@ -187,7 +235,7 @@ tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        st.subheader("Dodaj aktywność")
+        st.subheader("Dodaj atrakcję (Indywidualne)")
         with st.form("dodawanie_form", clear_on_submit=True):
             tytul = st.text_input("Tytuł")
             kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
@@ -216,9 +264,7 @@ with tab_edytor:
         st.subheader("📦 Giełda pomysłów")
         mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
                               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-        
         do_pokazania = st.session_state.db[mask_niezaplanowane]
-        
         if not do_pokazania.empty:
             event = st.dataframe(
                 do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
@@ -240,17 +286,13 @@ with tab_edytor:
 with tab_kalendarz:
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
-
-    # --- WYKRES ---
     background_df = generuj_tlo_widoku(current_start_date, current_days)
     full_df = przygotuj_dane_do_siatki(st.session_state.db)
-    
     domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
     range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
     total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
 
     st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
-
     base = alt.Chart(background_df).encode(
         x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
         y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
@@ -272,7 +314,6 @@ with tab_kalendarz:
     st.altair_chart(final_chart)
     st.divider()
 
-    # --- STEROWANIE ---
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
         st.subheader("📌 Przybornik")
@@ -286,7 +327,6 @@ with tab_kalendarz:
         mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
                      (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         niezaplanowane = st.session_state.db[mask_przyb]
-        
         if not niezaplanowane.empty:
             filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
             if not filtrowane_df.empty:
@@ -294,13 +334,11 @@ with tab_kalendarz:
                 wybrany = st.selectbox("Wybierz element:", opcje)
                 info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
                 st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
-                
                 cd, ch = st.columns(2)
                 with cd:
                     wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
                 with ch:
                     wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
-                
                 if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
                     with st.spinner("Aktualizuję..."):
                         start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
@@ -318,7 +356,6 @@ with tab_kalendarz:
         mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                    (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         zaplanowane = st.session_state.db[mask_zap]
-        
         if not zaplanowane.empty:
             zaplanowane_sorted = zaplanowane.sort_values(by='Start')
             opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
@@ -334,53 +371,38 @@ with tab_kalendarz:
         else: st.info("Kalendarz pusty.")
 
 # ==========================================
-# ZAKŁADKA 3: KOSZTY WSPÓLNE (NOWA!)
+# ZAKŁADKA 3: KOSZTY WSPÓLNE
 # ==========================================
 with tab_wspolne:
     col_fixed, col_fuel = st.columns(2)
-    
-    # --- LEWA: KOSZTY STAŁE ---
     with col_fixed:
         st.markdown("### 🏨 Noclegi i Opłaty")
         with st.form("form_wspolne", clear_on_submit=True):
-            nazwa = st.text_input("Nazwa")
+            nazwa = st.text_input("Nazwa (np. Oli House, Winiety)")
             kategoria_wsp = st.selectbox("Rodzaj", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
             koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
-            
             if st.form_submit_button("Dodaj do wspólnych"):
                 if nazwa and koszt_calosc > 0:
                     nowy = pd.DataFrame([{
                         'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 
                         'Start': None, 'Koniec': None, 'Zaplanowane': False,
                         'Koszt': float(koszt_calosc),
-                        'Typ_Kosztu': 'Wspólny' # Oznaczamy jako wspólny
+                        'Typ_Kosztu': 'Wspólny'
                     }])
                     updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                     if update_data(repo, updated_df):
-                        st.success(f"Dodano {nazwa}!")
-                        st.rerun()
-                else:
-                    st.error("Wpisz nazwę i kwotę.")
+                        st.success(f"Dodano {nazwa}!"); st.rerun()
+                else: st.error("Wpisz nazwę i kwotę.")
 
-    # --- PRAWA: KALKULATOR PALIWA ---
-    # --- PRAWA: KALKULATOR PALIWA ---
     with col_fuel:
         st.markdown("### ⛽ Kalkulator Trasy")
         with st.container(border=True):
-            auto_nazwa = st.text_input("Auto", value="BMW")
-            
-            # ZMIANA: Zamiast slidera mamy number_input
+            auto_nazwa = st.text_input("Auto (np. BMW, Bus)", value="BMW")
             dystans = st.number_input("Dystans (km)", min_value=0, value=3400, step=10)
-            
-            # Spalanie i Cenę zostawiamy na suwakach, bo tu fajnie się "symuluje" zmiany,
-            # ale jeśli też wolisz wpisywać, daj znać!
             spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.1)
             cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.01)
-            
-            # Wynik na żywo
             koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
             st.markdown(f"**Szacowany koszt:** :red[{koszt_trasy:.2f} PLN]")
-            
             if st.button("➕ Dodaj auto do rozliczenia"):
                 tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
                 nowy = pd.DataFrame([{
@@ -391,61 +413,48 @@ with tab_wspolne:
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                 if update_data(repo, updated_df):
-                    st.success(f"Dodano {auto_nazwa}!")
-                    st.rerun()
+                    st.success(f"Dodano {auto_nazwa}!"); st.rerun()
 
     st.divider()
     st.markdown("### 📋 Lista dodanych kosztów wspólnych")
-    
-    # Filtrujemy tylko Wspólne i Paliwo
     mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
     df_wspolne = st.session_state.db[mask_wspolne]
-    
     if not df_wspolne.empty:
         event = st.dataframe(
             df_wspolne[['Tytuł', 'Kategoria', 'Typ_Kosztu', 'Koszt']],
             use_container_width=True, hide_index=True,
             selection_mode="multi-row", on_select="rerun",
-            column_config={
-                "Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")
-            }
+            column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")}
         )
         if event.selection.rows:
             if st.button("🗑️ Usuń wybrane koszty wspólne", type="primary"):
                  with st.spinner("Usuwam..."):
                     indeksy = df_wspolne.iloc[event.selection.rows].index
                     updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
-                    if update_data(repo, updated_df):
-                        st.rerun()
-    else:
-        st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
+                    if update_data(repo, updated_df): st.rerun()
+    else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
 # ==========================================
-# ZAKŁADKA 4: PODSUMOWANIE (Z ETYKIETAMI DANYCH)
+# ZAKŁADKA 4: PODSUMOWANIE (FINAL)
 # ==========================================
 with tab_podsumowanie:
     st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
     
-    # --- 1. PRZYGOTOWANIE DANYCH ---
-    # Worek A: Indywidualne
     mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
              (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     df_A = st.session_state.db[mask_A].copy()
     df_A['Koszt'] = pd.to_numeric(df_A['Koszt'], errors='coerce').fillna(0)
     sum_A = df_A['Koszt'].sum()
 
-    # Worek B: Wspólne i Paliwo
     mask_B = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
     df_B = st.session_state.db[mask_B].copy()
     df_B['Koszt'] = pd.to_numeric(df_B['Koszt'], errors='coerce').fillna(0)
     sum_B_total = df_B['Koszt'].sum()
 
-    # Dzielnik
     liczba_osob = st.session_state.config_people
     sum_B_per_person = sum_B_total / liczba_osob
     grand_total = sum_A + sum_B_per_person
 
-    # --- 2. GÓRA: KPI ---
     kpi1, kpi2, kpi3 = st.columns(3)
     with kpi1:
         st.metric(label="Twoje łączne koszty", value=f"{grand_total:.2f} PLN")
@@ -457,13 +466,9 @@ with tab_podsumowanie:
 
     st.divider()
 
-    # --- 3. DÓŁ: WYKRESY ---
     col_left, col_right = st.columns([1, 2])
-
-    # LEWA: PIE CHART (Z ETYKIETAMI)
     with col_left:
         st.markdown("##### 🍰 Struktura kosztów (Twoja działka)")
-        
         pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
         if not df_B.empty:
             grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
@@ -477,68 +482,41 @@ with tab_podsumowanie:
         df_pie = df_pie[df_pie['Wartość'] > 0]
 
         if not df_pie.empty:
-            # Baza wykresu
-            base_pie = alt.Chart(df_pie).encode(
-                theta=alt.Theta(field="Wartość", type="quantitative", stack=True)
-            )
-            
-            # Warstwa 1: Kawałki tortu
+            base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
             pie = base_pie.mark_arc(innerRadius=50).encode(
                 color=alt.Color(field="Kategoria", type="nominal", legend=alt.Legend(orient="bottom")),
                 tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
             )
-            
-            # Warstwa 2: Etykiety tekstowe (Radius ustawia odległość od środka)
             text = base_pie.mark_text(radius=120).encode(
-                text=alt.Text("Wartość", format=".0f"), # Wyświetlamy liczbę bez groszy
+                text=alt.Text("Wartość", format=".0f"),
                 order=alt.Order("Kategoria"),
                 color=alt.value("black") 
             )
-            
-            # Łączymy warstwy
             st.altair_chart(pie + text, use_container_width=True)
-        else:
-            st.caption("Brak danych.")
+        else: st.caption("Brak danych.")
 
-        # Tabela pod wykresem
         st.markdown("##### 🧾 Twoje atrakcje")
         if not df_A.empty:
             tabela = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
             st.dataframe(tabela, use_container_width=True, hide_index=True, height=200, 
                          column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")})
-        else:
-            st.info("Brak płatnych atrakcji.")
+        else: st.info("Brak płatnych atrakcji.")
 
-    # PRAWA: BAR CHART (Z ETYKIETAMI)
     with col_right:
         st.markdown("##### 📅 Kiedy portfel zaboli najbardziej?")
-        
         if not df_A.empty:
             df_A['Data_Group'] = df_A['Start'].dt.date
             daily_costs = df_A.groupby('Data_Group')['Koszt'].sum().reset_index()
             daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
             daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
             
-            # Baza wykresu
             base_bar = alt.Chart(daily_costs).encode(
                 x=alt.X('Etykieta:O', title='Dzień', sort=alt.EncodingSortField(field="Sort_Key", order="ascending"), axis=alt.Axis(labelAngle=0)),
                 y=alt.Y('Koszt:Q', title='Suma (PLN)')
             )
-            
-            # Warstwa 1: Słupki
             bars = base_bar.mark_bar(color='#FF4B4B', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                 tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')]
             )
-            
-            # Warstwa 2: Tekst nad słupkami
-            text_bar = base_bar.mark_text(
-                align='center',
-                baseline='bottom',
-                dy=-5  # Przesunięcie o 5px w górę
-            ).encode(
-                text=alt.Text('Koszt:Q', format='.0f') # Wyświetla wartość całkowitą (bez groszy dla czytelności)
-            )
-            
+            text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5).encode(text=alt.Text('Koszt:Q', format='.0f'))
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
-        else:
-            st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
+        else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
