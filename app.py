@@ -568,19 +568,35 @@ with tab_podsumowanie:
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
 
-# --- QR CODE W SIDEBARZE ---
+# --- QR CODE W SIDEBARZE (STYL "BIAŁA KARTA") ---
 with st.sidebar:
     st.markdown("---")
     st.markdown(
-        f"<h3 style='text-align: center; color: {COLOR_TEXT}; font-family: Montserrat;'>📲 Udostępnij</h3>", 
+        f"<h3 style='text-align: center; color: {COLOR_TEXT}; font-family: Montserrat; margin-bottom: 10px;'>📲 Udostępnij</h3>", 
         unsafe_allow_html=True
     )
     
-    # Podmień ten link na swój (np. ten z Opcji 1)
+    # Link do aplikacji (Zmień jeśli masz własny)
     app_url = "https://zwariowana-przygoda-2026.streamlit.app"
     
-    # Generujemy kod QR używając darmowego API (bez instalowania bibliotek)
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color=d37759&bgcolor=1e2630"
+    # Przygotowanie kolorów do API (bez znaku #)
+    qr_color = COLOR_ACCENT.lstrip('#') # np. d37759
     
-    st.image(qr_url, use_container_width=False, output_format="PNG")
-    st.caption("Zeskanuj, aby dołączyć do planowania!")
+    # Kontener HTML z białym tłem
+    qr_html = f"""
+    <div style="
+        background-color: white; 
+        padding: 20px; 
+        border-radius: 12px; 
+        display: flex; 
+        justify-content: center; 
+        align-items: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        margin-bottom: 10px;
+    ">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;">
+    </div>
+    """
+    
+    st.markdown(qr_html, unsafe_allow_html=True)
+    st.caption("Zeskanuj telefonem, aby dołączyć do planowania!")
