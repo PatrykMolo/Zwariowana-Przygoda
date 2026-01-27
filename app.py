@@ -567,3 +567,20 @@ with tab_podsumowanie:
             )
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
+
+# --- QR CODE W SIDEBARZE ---
+with st.sidebar:
+    st.markdown("---")
+    st.markdown(
+        f"<h3 style='text-align: center; color: {COLOR_TEXT}; font-family: Montserrat;'>📲 Udostępnij</h3>", 
+        unsafe_allow_html=True
+    )
+    
+    # Podmień ten link na swój (np. ten z Opcji 1)
+    app_url = "https://zwariowana-przygoda-2026.streamlit.app"
+    
+    # Generujemy kod QR używając darmowego API (bez instalowania bibliotek)
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color=d37759&bgcolor=1e2630"
+    
+    st.image(qr_url, use_container_width=False, output_format="PNG")
+    st.caption("Zeskanuj, aby dołączyć do planowania!")
