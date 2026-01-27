@@ -1,6 +1,7 @@
-Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt
-Kraków - Alba Iulia,Trasa,11.0,,2026-07-25 15:00:00,False,0.0
-Salina Turda,Atrakcja,3.0,2026-07-25 16:00:00,2026-07-25 19:00:00,True,40.0
-Kasyno,Atrakcja,1.0,2026-07-26 05:00:00,2026-07-26 06:00:00,True,100.0
-burger king,Odpoczynek,2.0,2026-07-28 13:00:00,2026-07-28 15:00:00,True,30.0
-sex,Atrakcja,1.0,2026-07-29 10:00:00,2026-07-29 11:00:00,True,10.0
+Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
+Kraków - Alba Iulia,Trasa,11.0,,2026-07-25 15:00:00,False,0.0,Indywidualny
+Salina Turda,Atrakcja,3.0,2026-07-25 16:00:00,2026-07-25 19:00:00,True,40.0,Indywidualny
+Kasyno,Atrakcja,1.0,2026-07-26 05:00:00,2026-07-26 06:00:00,True,100.0,Indywidualny
+burger king,Odpoczynek,2.0,2026-07-28 13:00:00,2026-07-28 15:00:00,True,30.0,Indywidualny
+sex,Atrakcja,1.0,2026-07-29 10:00:00,2026-07-29 11:00:00,True,10.0,Indywidualny
+TEST,Atrakcja,1.0,,,False,0.0,Indywidualny
