@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, date, time
 from github import Github, Auth
 import io
 import json
+import base64
 
 # --- TWOJA NOWA PALETA (RETRO DARK) ---
 COLOR_BG = "#1e2630"        # Gunmetal (Ciemne Tło)
@@ -25,6 +26,15 @@ NAZWA_PLIKU_CONFIG = "config.json"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
+# --- FUNKCJA POMOCNICZA DO OBRAZKÓW BASE64 ---
+def image_to_base64(image_path):
+    """Wczytuje obrazek i konwertuje go na ciąg base64."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+    except FileNotFoundError:
+        return None # Zwróć None, jeśli plik nie istnieje
+        
 # --- CSS (CLEAN APP MODE - BEZ PASKÓW STREAMLIT) ---
 st.markdown(
     f"""
@@ -211,11 +221,12 @@ def settings_dialog():
                 st.success("Zapisano!")
                 st.rerun()
 
-# --- HEADER (PLANNER WYJAZDOWY) ---
+# --- HEADER (NOWY LOGOTYP BASE64) ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
 
 with col_title:
-    # 1. Definicje ikon (Zmienne pomocnicze)
+    # 1. Definicje ikon
+    # Ikona GitHub (bez zmian)
     icon_github = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
         'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
@@ -223,15 +234,24 @@ with col_title:
         '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>'
         '</svg>'
     )
+
+    # NOWOŚĆ: Wczytanie Twojego logotypu jako Base64
+    logo_base64 = image_to_base64("logo.png")
     
-    icon_car = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" '
-        f'fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">'
-        '<path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/>'
-        f'<circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
-        f'<circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
-        '</svg>'
-    )
+    if logo_base64:
+        # Jeśli plik logo.png istnieje, stwórz tag <img>
+        # Ustawiamy szerokość na 140px i zachowujemy odbicie lustrzane dla efektu pędu w prawo
+        icon_logotype = f'<img src="data:image/png;base64,{logo_base64}" width="140" style="transform: scaleX(-1);">'
+    else:
+        # Fallback (zapas): jeśli plik nie istnieje, wyświetl stary SVG auta
+        icon_logotype = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" '
+            f'fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/>'
+            f'<circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
+            f'<circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
+            '</svg>'
+        )
 
     # 2. Budowa HTML
     header_html = (
@@ -240,29 +260,17 @@ with col_title:
         
         # LEWA STRONA (TEKST)
         '<div style="flex: 1;">'
-        # Tytuł Główny
         f'<h1 style="color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;">'
         f'ZWARIOWANA<br>PRZYGODA <span style="color:{COLOR_ACCENT}">2026</span>'
         '</h1>'
-        
-        # NOWOŚĆ: Podtytuł "PLANNER WYJAZDOWY"
-        f'<p style="margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;">'
-        'PLANNER WYJAZDOWY'
-        '</p>'
-        
-        # Linia ozdobna
+        f'<p style="margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;">PLANNER WYJAZDOWY</p>'
         f'<div style="height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 20px 0 15px 0; border-radius: 2px;"></div>'
-        
-        # GitHub Info
-        f'<p style="margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;">'
-        f'{icon_github} Baza danych: GitHub Repository'
-        '</p>'
+        f'<p style="margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;">{icon_github} Baza danych: GitHub Repository</p>'
         '</div>'
         
-        # PRAWA STRONA (AUTO)
-        '<div style="flex: 0 0 auto; margin-left: 20px; opacity: 0.9; transform: scaleX(-1);">'
-        f'{icon_car}'
-        '</div>'
+        # PRAWA STRONA (LOGOTYP)
+        # Usuwamy dodatkowy div z margin-left i transform, bo są już w samym tagu <img>
+        f'<div style="flex: 0 0 auto; margin-left: 20px;">{icon_logotype}</div>'
         
         '</div>'
     )
@@ -270,7 +278,8 @@ with col_title:
     st.markdown(header_html, unsafe_allow_html=True)
 
 with col_settings:
-    if st.button("⚙️ Ustawienia", use_container_width=True):
+    st.write("") # Pusty odstęp dla wyrównania
+    if st.button("⚙️", use_container_width=True):
         settings_dialog()
         
 st.divider()
