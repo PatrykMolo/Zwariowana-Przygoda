@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date, time
 from github import Github, Auth
 import io
 
-# --- KONFIGURACJA POCZĄTKOWA (Domyślne wartości) ---
+# --- KONFIGURACJA POCZĄTKOWA ---
 DEFAULT_START_DATE = date(2026, 7, 24)
 DEFAULT_DAYS = 14
 SZEROKOSC_KOLUMNY_DZIEN = 100 
@@ -13,10 +13,9 @@ NAZWA_PLIKU_BAZY = "data.csv"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
-# --- INICJALIZACJA STANU KONFIGURACJI ---
+# --- INICJALIZACJA STANU ---
 if 'config_start_date' not in st.session_state:
     st.session_state.config_start_date = DEFAULT_START_DATE
-
 if 'config_days' not in st.session_state:
     st.session_state.config_days = DEFAULT_DAYS
 
@@ -26,17 +25,15 @@ st.markdown(
     <style>
     .block-container { padding-top: 2rem; }
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
-    /* Wyrównanie przycisku ustawień do środka w pionie względem nagłówka */
-    div.stButton > button:first-child {
-        height: 3em;
-        margin-top: 1.5em; 
-    }
+    div.stButton > button:first-child { height: 3em; margin-top: 1.5em; }
+    /* Stylizacja metric (dużej liczby) */
+    [data-testid="stMetricValue"] { font-size: 3rem; color: #FF4B4B; }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- ŁĄCZENIE Z GITHUBEM ---
+# --- GITHUB ---
 def init_github():
     try:
         token = st.secrets["github"]["token"]
@@ -54,15 +51,23 @@ def get_data(repo):
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
         csv_content = contents.decoded_content.decode("utf-8")
         if not csv_content:
-             return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane'])
+             return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt'])
+        
         df = pd.read_csv(io.StringIO(csv_content))
+        
+        # Konwersja dat
         if 'Start' in df.columns:
             df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns:
             df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
+            
+        # --- MIGRACJA DANYCH (DODANIE KOLUMNY KOSZT JEŚLI NIE ISTNIEJE) ---
+        if 'Koszt' not in df.columns:
+            df['Koszt'] = 0.0
+            
         return df.fillna("")
     except Exception:
-        return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane'])
+        return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt'])
 
 def update_data(repo, df):
     try:
@@ -84,22 +89,19 @@ if repo:
 else:
     st.stop()
 
-# --- DIALOG USTAWIEŃ (POPUP) ---
+# --- DIALOG ---
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
-    st.write("Zmień globalne ustawienia wyświetlania planu.")
-    
+    st.write("Ustawienia globalne")
     new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
-    new_days = st.number_input("Długość wyjazdu (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
-    
-    if st.button("Zapisz zmiany", type="primary"):
+    new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    if st.button("Zapisz", type="primary"):
         st.session_state.config_start_date = new_date
         st.session_state.config_days = new_days
         st.rerun()
 
-# --- HEADER Z PRZYCISKIEM ---
+# --- HEADER ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
-
 with col_title:
     st.markdown(
         """
@@ -110,14 +112,13 @@ with col_title:
         """,
         unsafe_allow_html=True
     )
-
 with col_settings:
     if st.button("⚙️ Ustawienia", use_container_width=True):
         settings_dialog()
 
 st.divider()
 
-# --- FUNKCJE POMOCNICZE (Z UŻYCIEM NOWYCH ZMIENNYCH) ---
+# --- HELPERY ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
     zaplanowane = df[df['Zaplanowane'].astype(str).str.upper() == 'TRUE']
@@ -152,11 +153,11 @@ def generuj_tlo_widoku(start_date, num_days):
             })
     return pd.DataFrame(tlo_data)
 
-# --- INTERFEJS ---
-tab_edytor, tab_kalendarz = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz Wyjazdu"])
+# --- ZAKŁADKI ---
+tab_edytor, tab_kalendarz, tab_koszty = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz", "💰 Podsumowanie Kosztów"])
 
 # ==========================================
-# ZAKŁADKA 1: EDYTOR
+# ZAKŁADKA 1: EDYTOR (Z KOSZTEM)
 # ==========================================
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
@@ -165,14 +166,21 @@ with tab_edytor:
         with st.form("dodawanie_form", clear_on_submit=True):
             tytul = st.text_input("Tytuł")
             kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
-            czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
+            c1, c2 = st.columns(2)
+            with c1:
+                czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
+            with c2:
+                # NOWE POLE: KOSZT
+                koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
+
             submit = st.form_submit_button("Zapisz", type="primary")
 
         if submit and tytul:
             with st.spinner("Zapisuję..."):
                 nowy = pd.DataFrame([{
                     'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
-                    'Start': None, 'Koniec': None, 'Zaplanowane': False
+                    'Start': None, 'Koniec': None, 'Zaplanowane': False,
+                    'Koszt': float(koszt) # Zapisujemy koszt
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                 if update_data(repo, updated_df):
@@ -185,10 +193,10 @@ with tab_edytor:
         do_pokazania = st.session_state.db[niezaplanowane_mask]
         
         if not do_pokazania.empty:
+            # Pokazujemy koszt w tabeli giełdy, żeby wiedzieć co ile kosztuje przed dodaniem
             event = st.dataframe(
-                do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)']], 
-                use_container_width=True, 
-                on_select="rerun", selection_mode="multi-row", hide_index=True
+                do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
+                use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
             )
             if event.selection.rows:
                 if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
@@ -198,50 +206,30 @@ with tab_edytor:
                         if update_data(repo, updated_df):
                             st.rerun()
         else:
-            st.info("Brak niezaplanowanych elementów.")
+            st.info("Brak elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ
+# ZAKŁADKA 2: KALENDARZ (BEZ KOSZTÓW)
 # ==========================================
 with tab_kalendarz:
-    
-    # --- POBIERANIE ZMIENNYCH Z KONFIGURACJI ---
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
 
+    # --- WYKRES ---
     background_df = generuj_tlo_widoku(current_start_date, current_days)
     full_df = przygotuj_dane_do_siatki(st.session_state.db)
-    
-    # Filtrowanie danych, żeby pokazać tylko te mieszczące się w nowym zakresie dat
-    # (Opcjonalnie - Altair i tak sobie poradzi, ale dla porządku można)
     
     domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
     range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
     total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
 
-    st.markdown(
-        """
-        <style>
-        [data-testid="stAltairChart"] {
-            overflow-x: auto;
-            padding-bottom: 10px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
 
     base = alt.Chart(background_df).encode(
-        x=alt.X('Dzień:O', 
-                sort=alt.EncodingSortField(field="DataFull", order="ascending"),
-                axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
+        x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
         y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
     )
-    
-    layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(
-        color=alt.value('white'),
-        tooltip=['Dzień', 'Godzina']
-    )
+    layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(color=alt.value('white'), tooltip=['Dzień', 'Godzina'])
 
     if not full_df.empty:
         chart_data = alt.Chart(full_df).encode(
@@ -249,33 +237,19 @@ with tab_kalendarz:
             y=alt.Y('Godzina:O'),
             tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
         )
-        
-        layer_rects = chart_data.mark_rect(stroke='white', strokeWidth=0.5).encode(
-            color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
-        )
-        
-        layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=SZEROKOSC_KOLUMNY_DZIEN-5).encode(
-            text=alt.Text('Tytuł_Display'), 
-            color=alt.value('#333333')
-        )
-        
-        final_chart = (layer_bg + layer_rects + layer_text).properties(
-            height=600,
-            width=total_width
-        )
+        layer_rects = chart_data.mark_rect(stroke='white', strokeWidth=0.5).encode(color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None))
+        layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=SZEROKOSC_KOLUMNY_DZIEN-5).encode(text=alt.Text('Tytuł_Display'), color=alt.value('#333333'))
+        final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
     else:
         final_chart = layer_bg.properties(height=600, width=total_width)
 
     st.altair_chart(final_chart)
-
     st.divider()
 
+    # --- STEROWANIE ---
     col_tools_left, col_tools_right = st.columns([1, 1])
-
-    # LEWA STRONA: PRZYBORNIK (DODAWANIE)
     with col_tools_left:
-        st.subheader("📌 Przybornik (Dodaj)")
-        
+        st.subheader("📌 Przybornik")
         st.write("Filtruj listę:")
         c1, c2, c3 = st.columns(3)
         filtry = []
@@ -283,67 +257,111 @@ with tab_kalendarz:
         if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
         if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
 
-        niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
-        niezaplanowane = st.session_state.db[niezaplanowane_mask]
-
+        niezaplanowane = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE']
         if not niezaplanowane.empty:
             filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
-            
             if not filtrowane_df.empty:
                 opcje = filtrowane_df['Tytuł'].tolist()
                 wybrany = st.selectbox("Wybierz element:", opcje)
                 info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
+                st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
                 
-                st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Kat: {info['Kategoria']}")
-                
-                col_d, col_h = st.columns(2)
-                with col_d:
-                    # UŻYWAMY DAT Z KONFIGURACJI DO OGRANICZENIA WYBORU
-                    wybrana_data = st.date_input("Dzień:", value=current_start_date, 
-                                                 min_value=current_start_date, 
-                                                 max_value=current_start_date + timedelta(days=current_days))
-                with col_h:
+                cd, ch = st.columns(2)
+                with cd:
+                    wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
+                with ch:
                     wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
                 
                 if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
                     with st.spinner("Aktualizuję..."):
                         start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
-                        end_dt = start_dt + timedelta(hours=float(info['Czas (h)']))
                         idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
                         st.session_state.db.at[idx, 'Start'] = start_dt
-                        st.session_state.db.at[idx, 'Koniec'] = end_dt
+                        st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
                         st.session_state.db.at[idx, 'Zaplanowane'] = True
                         if update_data(repo, st.session_state.db):
-                            st.success("Zapisano!")
-                            st.rerun()
-            else:
-                st.warning("Brak elementów w wybranych kategoriach.")
-        else:
-            st.success("Pusto w poczekalni! Wszystko zaplanowane.")
+                            st.success("Zapisano!"); st.rerun()
+            else: st.warning("Brak elementów.")
+        else: st.success("Pusto!")
 
-    # PRAWA STRONA: USUWANIE (ZDEJMOWANIE)
     with col_tools_right:
-        st.subheader("🗑️ Zdejmowanie z planu")
-        
-        zaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'
-        zaplanowane = st.session_state.db[zaplanowane_mask]
-        
+        st.subheader("🗑️ Zdejmowanie")
+        zaplanowane = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE']
         if not zaplanowane.empty:
             zaplanowane_sorted = zaplanowane.sort_values(by='Start')
-            opcje_usuwania = zaplanowane_sorted.apply(
-                lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1
-            ).tolist()
-            
-            wybrany_do_usuniecia_opis = st.selectbox("Wybierz zaplanowany element:", opcje_usuwania)
-            if wybrany_do_usuniecia_opis:
-                oryginalny_tytul = zaplanowane_sorted.iloc[opcje_usuwania.index(wybrany_do_usuniecia_opis)]['Tytuł']
-            
+            opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
+            wybrany_op = st.selectbox("Element:", opcje)
+            if wybrany_op:
+                orig_tytul = zaplanowane_sorted.iloc[opcje.index(wybrany_op)]['Tytuł']
                 if st.button("↩️ Wróć do poczekalni", use_container_width=True):
                     with st.spinner("Zdejmuję..."):
-                        idx = st.session_state.db[st.session_state.db['Tytuł'] == oryginalny_tytul].index[0]
+                        idx = st.session_state.db[st.session_state.db['Tytuł'] == orig_tytul].index[0]
                         st.session_state.db.at[idx, 'Zaplanowane'] = False
                         st.session_state.db.at[idx, 'Start'] = None
-                        if update_data(repo, st.session_state.db):
-                            st.rerun()
-        else:
-            st.info("Kalendarz jest pusty.")
+                        if update_data(repo, st.session_state.db): st.rerun()
+        else: st.info("Kalendarz pusty.")
+
+# ==========================================
+# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (NOWOŚĆ)
+# ==========================================
+with tab_koszty:
+    st.subheader("💸 Ile to będzie kosztować?")
+    
+    # 1. Filtrowanie danych (Tylko Zaplanowane)
+    df_costs = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'].copy()
+    
+    # Upewniamy się, że kolumna Koszt jest liczbą (gdyby coś poszło nie tak)
+    df_costs['Koszt'] = pd.to_numeric(df_costs['Koszt'], errors='coerce').fillna(0)
+    
+    if not df_costs.empty:
+        # Layout: Lewa (KPI + Tabela) vs Prawa (Wykres)
+        col_kpi, col_chart = st.columns([1, 2])
+        
+        with col_kpi:
+            # A. DATA CARD (SUMA)
+            total_cost = df_costs['Koszt'].sum()
+            st.metric(label="Całkowity koszt wyjazdu", value=f"{total_cost:.2f} PLN")
+            
+            st.divider()
+            
+            # B. TABELA (Tylko koszty > 0)
+            tabela_kosztow = df_costs[df_costs['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
+            
+            if not tabela_kosztow.empty:
+                st.write("**Szczegóły wydatków:**")
+                st.dataframe(
+                    tabela_kosztow, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "Koszt": st.column_config.NumberColumn("Koszt (PLN)", format="%.2f zł")
+                    }
+                )
+            else:
+                st.info("Brak pozycji z przypisanym kosztem w kalendarzu.")
+                
+        with col_chart:
+            # C. BAR CHART (Koszty w czasie)
+            st.write("**📅 Rozkład wydatków w czasie**")
+            
+            # Grupujemy po dniu
+            # Tworzymy kolumnę 'Data' (sam dzień, bez godziny)
+            df_costs['Data'] = df_costs['Start'].dt.date
+            
+            # Agregacja
+            daily_costs = df_costs.groupby('Data')['Koszt'].sum().reset_index()
+            
+            # Wykres Altair
+            bar_chart = alt.Chart(daily_costs).mark_bar(color='#FF4B4B').encode(
+                x=alt.X('Data:T', title='Dzień', axis=alt.Axis(format='%d.%m')),
+                y=alt.Y('Koszt:Q', title='Suma (PLN)'),
+                tooltip=[
+                    alt.Tooltip('Data:T', format='%d.%m.%Y', title='Data'), 
+                    alt.Tooltip('Koszt:Q', format='.2f', title='Kwota')
+                ]
+            ).properties(height=400)
+            
+            st.altair_chart(bar_chart, use_container_width=True)
+            
+    else:
+        st.info("Kalendarz jest pusty. Zaplanuj coś, aby zobaczyć koszty!")
