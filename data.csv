@@ -5,7 +5,7 @@ Kasyno,Atrakcja,1.0,2026-07-26 05:00:00,2026-07-26 06:00:00,True,100.0,Indywidua
 burger king,Odpoczynek,2.0,2026-07-28 13:00:00,2026-07-28 15:00:00,True,30.0,Indywidualny
 sex,Atrakcja,1.0,2026-07-29 10:00:00,2026-07-29 11:00:00,True,10.0,Indywidualny
 TEST,Atrakcja,1.0,,,False,0.0,Indywidualny
-test1,Atrakcja,1.0,2026-07-24 02:00:00,2026-07-24 03:00:00,True,20.0,Indywidualny
+test1,Atrakcja,1.0,,2026-07-24 03:00:00,False,20.0,Indywidualny
 Paliwo: BMW (3400km),Trasa,0.0,,,False,1122.0,Paliwo
 Paliwo: Citroen SpaceTourer (3400km),Trasa,0.0,,,False,1734.0,Paliwo
 Casa Di Mare,Nocleg,0.0,,,False,3700.0,Wspólny
