@@ -394,6 +394,7 @@ with tab_kalendarz:
         df_events = df_events.sort_values(by='Start')
 
     # --- WIDOK MOBILNY (AGENDA) ---
+   # --- WIDOK MOBILNY (NAPRAWIONY - METODA "CEGŁA PO CEGLE") ---
     if mobile_mode:
         if df_events.empty:
             st.info("Nic jeszcze nie zaplanowano.")
@@ -404,62 +405,70 @@ with tab_kalendarz:
 
             for day in unique_dates:
                 # Nagłówek Dnia
-                day_str = day.strftime('%d.%m (%A)')
-                # Tłumaczenie dni tygodnia (opcjonalne)
                 day_map = {'Monday': 'Poniedziałek', 'Tuesday': 'Wtorek', 'Wednesday': 'Środa', 'Thursday': 'Czwartek', 'Friday': 'Piątek', 'Saturday': 'Sobota', 'Sunday': 'Niedziela'}
                 day_name = day.strftime('%A')
-                day_display = f"{day.strftime('%d.%m')} • {day_map.get(day_name, day_name)}"
+                day_pl = day_map.get(day_name, day_name)
                 
-                st.markdown(f"#### 🗓️ {day_display}")
+                # Wyświetlamy nagłówek dnia jako Markdown (to działało dobrze)
+                st.markdown(f"#### 🗓️ {day.strftime('%d.%m')} • {day_pl}")
                 
                 daily_items = df_events[df_events['Date_Only'] == day]
                 
                 for _, row in daily_items.iterrows():
-                    # Przygotowanie danych do karty
+                    # 1. Przygotowanie zmiennych (poza HTMLem)
                     start_time = row['Start'].strftime('%H:%M')
                     end_time = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%H:%M')
+                    duration = int(row['Czas (h)'])
                     title = row['Tytuł']
                     cat = row['Kategoria']
-                    cost = row['Koszt'] if row['Koszt'] > 0 else ""
-                    cost_badge = f"<span style='float:right; font-weight:bold;'>{cost:.0f} zł</span>" if cost else ""
                     
-                    # Kolorowanie kart w zależności od kategorii
+                    # Koszt - formatowanie
+                    try:
+                        cost_val = float(row['Koszt'])
+                    except:
+                        cost_val = 0.0
+                    
+                    cost_badge = ""
+                    if cost_val > 0:
+                        # Badge kosztu jako osobny string HTML
+                        cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>"
+
+                    # Kolory
                     if cat == "Atrakcja":
                         bg_color = COLOR_ACCENT # Ceglasty
-                        text_color = COLOR_BG   # Ciemny tekst
+                        text_color = "#faf9dd"  # Jasny kremowy (dla kontrastu na cegle)
                     elif cat == "Trasa":
                         bg_color = COLOR_SEC    # Morski
-                        text_color = COLOR_TEXT # Jasny tekst
+                        text_color = "#ffffff"  # Biały
                     else:
-                        bg_color = "#444"       # Szary dla reszty
-                        text_color = "#fff"
+                        bg_color = "#444444"    # Szary
+                        text_color = "#dddddd"
 
-                    # HTML Karty (Mobile Friendly)
-                    card_html = f"""
-                    <div style="
-                        background-color: {bg_color};
-                        color: {text_color};
-                        padding: 12px 16px;
-                        border-radius: 10px;
-                        margin-bottom: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                        border-left: 5px solid rgba(0,0,0,0.2);
-                    ">
-                        <div style="font-size: 0.85rem; opacity: 0.8; display: flex; justify-content: space-between;">
-                            <span>⏱️ {start_time} - {end_time} ({int(row['Czas (h)'])}h)</span>
-                            {cost_badge}
-                        </div>
-                        <div style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">
-                            {title}
-                        </div>
-                        <div style="font-size: 0.8rem; opacity: 0.7; margin-top: 2px; text-transform: uppercase; letter-spacing: 1px;">
-                            {cat}
-                        </div>
-                    </div>
-                    """
+                    # 2. Budowanie HTML linijka po linijce (Bezpieczna metoda)
+                    card_html = ""
+                    # Otwarcie kontenera
+                    card_html += f"<div style='background-color: {bg_color}; color: {text_color}; padding: 15px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.15); border-left: 6px solid rgba(0,0,0,0.2);'>"
+                    
+                    # Wiersz 1: Czas i Koszt
+                    card_html += f"<div style='font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px; display: flow-root;'>" # flow-root naprawia float
+                    card_html += f"<span>⏱️ {start_time} - {end_time} ({duration}h)</span>"
+                    card_html += f"{cost_badge}"
+                    card_html += "</div>"
+                    
+                    # Wiersz 2: Tytuł
+                    card_html += f"<div style='font-size: 1.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 4px;'>{title}</div>"
+                    
+                    # Wiersz 3: Kategoria
+                    card_html += f"<div style='font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;'>{cat}</div>"
+                    
+                    # Zamknięcie kontenera
+                    card_html += "</div>"
+
+                    # 3. Renderowanie
                     st.markdown(card_html, unsafe_allow_html=True)
                 
-                st.write("") # Odstęp między dniami
+                # Odstęp po każdym dniu
+                st.write("")
 
     # --- WIDOK DESKTOP (ALTAIR) ---
     else:
