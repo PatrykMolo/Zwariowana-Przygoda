@@ -163,12 +163,12 @@ with tab_edytor:
             st.info("Brak niezaplanowanych elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (SCROLLABLE)
+# ZAKŁADKA 2: KALENDARZ (SCROLLABLE MOBILE FIX)
 # ==========================================
 with tab_kalendarz:
     col_wykres, col_narzedzia = st.columns([3, 1])
 
-    # --- PRAWY PANEL: NARZĘDZIA ---
+    # --- PRAWY PANEL: NARZĘDZIA (Bez zmian) ---
     with col_narzedzia:
         st.markdown("### 📌 Przybornik")
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
@@ -181,7 +181,6 @@ with tab_kalendarz:
             
             st.info(f"⏳ **{int(float(info['Czas (h)']))}h** | {info['Kategoria']}")
             
-            # Wybór daty
             wybrana_data = st.date_input("Dzień:", value=DATA_STARTU_WYJAZDU, 
                                          min_value=DATA_STARTU_WYJAZDU, 
                                          max_value=DATA_STARTU_WYJAZDU + timedelta(days=DLUGOSC_WYJAZDU_DNI))
@@ -202,7 +201,6 @@ with tab_kalendarz:
             st.success("Wszystko zaplanowane!")
             
         st.divider()
-        # Opcja cofania
         zaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'
         zaplanowane = st.session_state.db[zaplanowane_mask]
         if not zaplanowane.empty:
@@ -215,36 +213,52 @@ with tab_kalendarz:
                     if update_data(repo, st.session_state.db):
                         st.rerun()
 
-    # --- LEWY PANEL: WYKRES PRZEWIJALNY ---
+    # --- LEWY PANEL: WYKRES Z WYMUSZONYM SCROLLEM ---
     with col_wykres:
-        # Generujemy tło dla CAŁEGO wyjazdu (np. 14 dni)
-        # Dzięki temu wykres będzie długi i pojawi się pasek przewijania
         background_df = generuj_tlo_widoku(DATA_STARTU_WYJAZDU, DLUGOSC_WYJAZDU_DNI)
-        
-        # Przygotowanie danych użytkownika
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
         
-        # Kolorystyka
         domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
         range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
 
-        # Obliczamy szerokość wykresu w pikselach
-        total_width = DLUGOSC_WYJAZDU_DNI * SZEROKOSC_KOLUMNY_DZIEN
+        # 1. OBLICZAMY SZEROKOŚĆ (Pixel Perfect)
+        # Zmniejszyłem trochę do 120px na dzień, żeby na telefonie wchodziło więcej dni naraz, 
+        # ale nadal był scroll.
+        pixel_per_day = 120 
+        total_width = DLUGOSC_WYJAZDU_DNI * pixel_per_day
 
-        # WARSTWA 1: TŁO (Siatka)
+        # 2. CSS HACK (Wymuszenie szerokości na telefonie)
+        # To jest kluczowy moment. Wstrzykujemy styl, który atakuje wykres
+        # i zabrania mu się kurczyć poniżej obliczonej szerokości.
+        st.markdown(
+            f"""
+            <style>
+            [data-testid="stAltairChart"] {{
+                overflow-x: auto !important; /* Pozwól przewijać kontener */
+                padding-bottom: 20px;
+            }}
+            [data-testid="stAltairChart"] canvas {{
+                min-width: {total_width}px !important; /* Wymuś minimalną szerokość */
+                width: {total_width}px !important;     /* Ustaw sztywną szerokość */
+                max-width: none !important;            /* Zabroń skalowania w dół */
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
         base = alt.Chart(background_df).encode(
             x=alt.X('Dzień:O', 
                     sort=alt.EncodingSortField(field="DataFull", order="ascending"),
-                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=12)),
+                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11)),
             y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None))
         )
         
         layer_bg = base.mark_rect(stroke='lightgray', strokeWidth=1).encode(
             color=alt.value('white'),
-            tooltip=['Dzień', 'Godzina'] # Tooltip żeby wiedzieć gdzie się klika
+            tooltip=['Dzień', 'Godzina']
         )
 
-        # WARSTWA 2: KLOCKI DANYCH
         if not full_df.empty:
             chart_data = alt.Chart(full_df).encode(
                 x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
@@ -256,19 +270,22 @@ with tab_kalendarz:
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
             )
             
-            layer_text = chart_data.mark_text(dx=5, align='left', baseline='middle', fontSize=11, fontWeight='bold').encode(
+            # Skracamy tekst na wykresie, żeby się nie zlewał
+            layer_text = chart_data.mark_text(dx=2, align='left', baseline='middle', fontSize=10, limit=pixel_per_day-5).encode(
                 text=alt.Text('Tytuł_Display'), 
                 color=alt.value('#333333')
             )
             
             final_chart = (layer_bg + layer_rects + layer_text).properties(
-                height=700,
-                width=total_width # SZTYWNA SZEROKOŚĆ WYMUSZAJĄCA SCROLL
+                height=650,
+                width=total_width
             )
         else:
             final_chart = layer_bg.properties(
-                height=700,
+                height=650,
                 width=total_width
             )
 
-        st.altair_chart(final_chart) # Usunięto use_container_width=True żeby scroll zadziałał
+        # WAŻNE: use_container_width MUSI BYĆ FALSE
+        # Inaczej Streamlit nadpisze nasz CSS
+        st.altair_chart(final_chart, use_container_width=False)
