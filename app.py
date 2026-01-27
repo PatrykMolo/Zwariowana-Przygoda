@@ -2,16 +2,23 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime, timedelta, date, time
-from github import Github, Auth # <--- ZMIANA 1: Dodany import Auth
+from github import Github, Auth
 import io
 
-# --- KONFIGURACJA ---
-DATA_STARTU_WYJAZDU = date(2026, 7, 24)
-DLUGOSC_WYJAZDU_DNI = 14
+# --- KONFIGURACJA POCZĄTKOWA (Domyślne wartości) ---
+DEFAULT_START_DATE = date(2026, 7, 24)
+DEFAULT_DAYS = 14
 SZEROKOSC_KOLUMNY_DZIEN = 100 
 NAZWA_PLIKU_BAZY = "data.csv"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
+
+# --- INICJALIZACJA STANU KONFIGURACJI ---
+if 'config_start_date' not in st.session_state:
+    st.session_state.config_start_date = DEFAULT_START_DATE
+
+if 'config_days' not in st.session_state:
+    st.session_state.config_days = DEFAULT_DAYS
 
 # --- CSS ---
 st.markdown(
@@ -19,21 +26,21 @@ st.markdown(
     <style>
     .block-container { padding-top: 2rem; }
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
+    /* Wyrównanie przycisku ustawień do środka w pionie względem nagłówka */
+    div.stButton > button:first-child {
+        height: 3em;
+        margin-top: 1.5em; 
+    }
     </style>
-    <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center; margin-bottom: 2rem;'>
-        <h1 style='color: #0E1117; margin:0; font-size: 3rem;'>🚗 Zwariowana Przygoda 2026</h1>
-        <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>Baza danych: GitHub Repository 🐙</p>
-    </div>
     """,
     unsafe_allow_html=True
 )
 
-# --- ŁĄCZENIE Z GITHUBEM (NAPRAWIONE OSTRZEŻENIE) ---
+# --- ŁĄCZENIE Z GITHUBEM ---
 def init_github():
     try:
         token = st.secrets["github"]["token"]
         repo_name = st.secrets["github"]["repo_name"]
-        # <--- ZMIANA 2: Nowy sposób autoryzacji
         auth = Auth.Token(token)
         g = Github(auth=auth) 
         repo = g.get_repo(repo_name)
@@ -77,7 +84,40 @@ if repo:
 else:
     st.stop()
 
-# --- FUNKCJE POMOCNICZE ---
+# --- DIALOG USTAWIEŃ (POPUP) ---
+@st.dialog("⚙️ Konfiguracja Wyjazdu")
+def settings_dialog():
+    st.write("Zmień globalne ustawienia wyświetlania planu.")
+    
+    new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
+    new_days = st.number_input("Długość wyjazdu (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    
+    if st.button("Zapisz zmiany", type="primary"):
+        st.session_state.config_start_date = new_date
+        st.session_state.config_days = new_days
+        st.rerun()
+
+# --- HEADER Z PRZYCISKIEM ---
+col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
+
+with col_title:
+    st.markdown(
+        """
+        <div style='background-color: #F0F2F6; padding: 1.5rem; border-radius: 10px; text-align: center;'>
+            <h1 style='color: #0E1117; margin:0; font-size: 3rem;'>🚗 Zwariowana Przygoda 2026</h1>
+            <p style='margin-top: 0.5rem; font-size: 1.2rem; color: #555;'>Baza danych: GitHub Repository 🐙</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col_settings:
+    if st.button("⚙️ Ustawienia", use_container_width=True):
+        settings_dialog()
+
+st.divider()
+
+# --- FUNKCJE POMOCNICZE (Z UŻYCIEM NOWYCH ZMIENNYCH) ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
     zaplanowane = df[df['Zaplanowane'].astype(str).str.upper() == 'TRUE']
@@ -147,7 +187,6 @@ with tab_edytor:
         if not do_pokazania.empty:
             event = st.dataframe(
                 do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)']], 
-                # ZMIANA: używamy 'width' zamiast 'use_container_width' (choć w dataframe to wciąż działa, to dla spójności zostawiam domyślne)
                 use_container_width=True, 
                 on_select="rerun", selection_mode="multi-row", hide_index=True
             )
@@ -162,16 +201,23 @@ with tab_edytor:
             st.info("Brak niezaplanowanych elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (POPRAWIONA)
+# ZAKŁADKA 2: KALENDARZ
 # ==========================================
 with tab_kalendarz:
     
-    background_df = generuj_tlo_widoku(DATA_STARTU_WYJAZDU, DLUGOSC_WYJAZDU_DNI)
+    # --- POBIERANIE ZMIENNYCH Z KONFIGURACJI ---
+    current_start_date = st.session_state.config_start_date
+    current_days = st.session_state.config_days
+
+    background_df = generuj_tlo_widoku(current_start_date, current_days)
     full_df = przygotuj_dane_do_siatki(st.session_state.db)
+    
+    # Filtrowanie danych, żeby pokazać tylko te mieszczące się w nowym zakresie dat
+    # (Opcjonalnie - Altair i tak sobie poradzi, ale dla porządku można)
     
     domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
     range_colors = ["#66BB6A", "#42A5F5", "#FFEE58", "#FFFFFF"] 
-    total_width = DLUGOSC_WYJAZDU_DNI * SZEROKOSC_KOLUMNY_DZIEN
+    total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
 
     st.markdown(
         """
@@ -220,9 +266,6 @@ with tab_kalendarz:
     else:
         final_chart = layer_bg.properties(height=600, width=total_width)
 
-    # <--- ZMIANA 3: Usunięto use_container_width=False
-    # Ponieważ ustawiliśmy sztywną szerokość w Altair (.properties(width=...)), 
-    # Streamlit sam z siebie wyświetli to w oryginalnym rozmiarze i doda scrollbar.
     st.altair_chart(final_chart)
 
     st.divider()
@@ -243,7 +286,6 @@ with tab_kalendarz:
         niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
         niezaplanowane = st.session_state.db[niezaplanowane_mask]
 
-        # <--- ZMIANA 4: Poprawiona literówka (nezaplanowane -> niezaplanowane)
         if not niezaplanowane.empty:
             filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
             
@@ -256,9 +298,10 @@ with tab_kalendarz:
                 
                 col_d, col_h = st.columns(2)
                 with col_d:
-                    wybrana_data = st.date_input("Dzień:", value=DATA_STARTU_WYJAZDU, 
-                                                 min_value=DATA_STARTU_WYJAZDU, 
-                                                 max_value=DATA_STARTU_WYJAZDU + timedelta(days=DLUGOSC_WYJAZDU_DNI))
+                    # UŻYWAMY DAT Z KONFIGURACJI DO OGRANICZENIA WYBORU
+                    wybrana_data = st.date_input("Dzień:", value=current_start_date, 
+                                                 min_value=current_start_date, 
+                                                 max_value=current_start_date + timedelta(days=current_days))
                 with col_h:
                     wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
                 
