@@ -187,7 +187,7 @@ tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        st.subheader("Dodaj atrakcję (Indywidualne)")
+        st.subheader("Dodaj aktywność")
         with st.form("dodawanie_form", clear_on_submit=True):
             tytul = st.text_input("Tytuł")
             kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
@@ -343,7 +343,7 @@ with tab_wspolne:
     with col_fixed:
         st.markdown("### 🏨 Noclegi i Opłaty")
         with st.form("form_wspolne", clear_on_submit=True):
-            nazwa = st.text_input("Nazwa (np. Oli House, Winiety)")
+            nazwa = st.text_input("Nazwa")
             kategoria_wsp = st.selectbox("Rodzaj", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
             koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
             
@@ -477,7 +477,7 @@ with tab_podsumowanie:
 
     # LEWA KOLUMNA: PIE CHART + TABELA ATRAKCJI
     with col_left:
-        st.markdown("##### 🍰 Struktura kosztów (Twoja działka)")
+        st.markdown("##### 🍰 Struktura kosztów")
         
         # Przygotowanie danych do Pie Chart
         # 1. Kawałek tortu: Kalendarz (jako całość)
@@ -505,7 +505,7 @@ with tab_podsumowanie:
         else:
             st.caption("Brak danych do wykresu kołowego.")
 
-        st.markdown("##### 🧾 Szczegóły Twoich atrakcji")
+        st.markdown("##### 🧾 Szczegóły atrakcji")
         # Tabela tylko z Worka A (tak jak chciałeś)
         if not df_A.empty:
             tabela = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
