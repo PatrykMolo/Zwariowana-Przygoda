@@ -25,35 +25,39 @@ NAZWA_PLIKU_CONFIG = "config.json"
 
 st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
 
-# --- CSS (STYLIZACJA W NOWEJ PALECIE) ---
+# --- CSS (STYLIZACJA Z NOWĄ CZCIONKĄ MONTSERRAT) ---
 st.markdown(
     f"""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+
+    html, body, [class*="st-"] {{
+        font-family: 'Montserrat', sans-serif;
+    }}
+
     .block-container {{ padding-top: 2rem; }}
-    /* Checkboxy */
-    div[data-testid="stCheckbox"] {{ margin-bottom: -10px; }}
     
-    /* Przyciski - Ceglasty Akcent */
+    /* Przyciski */
     div.stButton > button:first-child {{ 
         height: 3em; 
         margin-top: 1.5em; 
         background-color: {COLOR_ACCENT}; 
-        color: {COLOR_TEXT}; /* Kremowy tekst na cegle */
+        color: {COLOR_BG}; 
         border: none;
         font-weight: bold;
-    }}
-    div.stButton > button:first-child:hover {{
-        background-color: #b06045; /* Ciemniejsza cegła przy najechaniu */
-        color: {COLOR_TEXT};
+        border-radius: 8px; /* Lekko zaokrąglone rogi pasują do Montserrat */
     }}
     
     /* Duże Liczby (Metrics) */
-    [data-testid="stMetricValue"] {{ font-size: 3rem; color: {COLOR_ACCENT}; }}
+    [data-testid="stMetricValue"] {{ 
+        font-size: 3rem; 
+        color: {COLOR_ACCENT}; 
+        font-weight: 700;
+    }}
     
-    /* Zakładki */
-    .stTabs [aria-selected="true"] {{
-        color: {COLOR_ACCENT} !important;
-        border-bottom-color: {COLOR_ACCENT} !important;
+    /* Nagłówek sekcji */
+    h1, h2, h3 {{
+        font-weight: 700 !important;
     }}
     </style>
     """,
