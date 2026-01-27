@@ -435,11 +435,12 @@ with tab_wspolne:
     else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
 # ==========================================
-# ZAKŁADKA 4: PODSUMOWANIE (FINAL)
+# ZAKŁADKA 4: PODSUMOWANIE (WHITE LABELS & %)
 # ==========================================
 with tab_podsumowanie:
     st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
     
+    # --- 1. DANE ---
     mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
              (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     df_A = st.session_state.db[mask_A].copy()
@@ -455,6 +456,7 @@ with tab_podsumowanie:
     sum_B_per_person = sum_B_total / liczba_osob
     grand_total = sum_A + sum_B_per_person
 
+    # --- 2. KPI ---
     kpi1, kpi2, kpi3 = st.columns(3)
     with kpi1:
         st.metric(label="Twoje łączne koszty", value=f"{grand_total:.2f} PLN")
@@ -466,9 +468,13 @@ with tab_podsumowanie:
 
     st.divider()
 
+    # --- 3. WYKRESY ---
     col_left, col_right = st.columns([1, 2])
+
+    # LEWA: PIE CHART (PROCENTY + BIAŁE ETYKIETY)
     with col_left:
         st.markdown("##### 🍰 Struktura kosztów (Twoja działka)")
+        
         pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
         if not df_B.empty:
             grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
@@ -482,18 +488,31 @@ with tab_podsumowanie:
         df_pie = df_pie[df_pie['Wartość'] > 0]
 
         if not df_pie.empty:
+            # OBLICZAMY PROCENTY
+            total_pie = df_pie['Wartość'].sum()
+            df_pie['Procent'] = df_pie['Wartość'] / total_pie
+
             base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
+            
             pie = base_pie.mark_arc(innerRadius=50).encode(
                 color=alt.Color(field="Kategoria", type="nominal", legend=alt.Legend(orient="bottom")),
-                tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
+                tooltip=[
+                    'Kategoria', 
+                    alt.Tooltip('Wartość', format='.2f', title='Kwota (PLN)'),
+                    alt.Tooltip('Procent', format='.1%', title='Udział')
+                ]
             )
-            text = base_pie.mark_text(radius=120).encode(
-                text=alt.Text("Wartość", format=".0f"),
+            
+            # ZMIANA: Biały kolor, większa czcionka, format procentowy
+            text = base_pie.mark_text(radius=120, size=14).encode(
+                text=alt.Text("Procent", format=".0%"), # Wyświetla np. 45%
                 order=alt.Order("Kategoria"),
-                color=alt.value("black") 
+                color=alt.value("white") # Biały kolor
             )
+            
             st.altair_chart(pie + text, use_container_width=True)
-        else: st.caption("Brak danych.")
+        else:
+            st.caption("Brak danych.")
 
         st.markdown("##### 🧾 Twoje atrakcje")
         if not df_A.empty:
@@ -502,6 +521,7 @@ with tab_podsumowanie:
                          column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")})
         else: st.info("Brak płatnych atrakcji.")
 
+    # PRAWA: BAR CHART (BIAŁE ETYKIETY)
     with col_right:
         st.markdown("##### 📅 Kiedy portfel zaboli najbardziej?")
         if not df_A.empty:
@@ -517,6 +537,17 @@ with tab_podsumowanie:
             bars = base_bar.mark_bar(color='#FF4B4B', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                 tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')]
             )
-            text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5).encode(text=alt.Text('Koszt:Q', format='.0f'))
+            
+            # ZMIANA: Biały kolor, większa czcionka
+            text_bar = base_bar.mark_text(
+                align='center', 
+                baseline='bottom', 
+                dy=-5,
+                size=12 # Nieco większa czcionka
+            ).encode(
+                text=alt.Text('Koszt:Q', format='.0f'),
+                color=alt.value('white') # Biały kolor
+            )
+            
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
