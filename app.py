@@ -8,6 +8,7 @@ import io
 # --- KONFIGURACJA POCZĄTKOWA ---
 DEFAULT_START_DATE = date(2026, 7, 24)
 DEFAULT_DAYS = 14
+DEFAULT_PEOPLE = 12 # Domyślna liczba osób
 SZEROKOSC_KOLUMNY_DZIEN = 100 
 NAZWA_PLIKU_BAZY = "data.csv"
 
@@ -18,6 +19,9 @@ if 'config_start_date' not in st.session_state:
     st.session_state.config_start_date = DEFAULT_START_DATE
 if 'config_days' not in st.session_state:
     st.session_state.config_days = DEFAULT_DAYS
+# Nowa zmienna w sesji: Liczba Osób
+if 'config_people' not in st.session_state:
+    st.session_state.config_people = DEFAULT_PEOPLE
 
 # --- CSS ---
 st.markdown(
@@ -26,7 +30,6 @@ st.markdown(
     .block-container { padding-top: 2rem; }
     div[data-testid="stCheckbox"] { margin-bottom: -10px; }
     div.stButton > button:first-child { height: 3em; margin-top: 1.5em; }
-    /* Stylizacja metric (dużej liczby) */
     [data-testid="stMetricValue"] { font-size: 3rem; color: #FF4B4B; }
     </style>
     """,
@@ -50,8 +53,11 @@ def get_data(repo):
     try:
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
         csv_content = contents.decoded_content.decode("utf-8")
+        # Definiujemy pełną strukturę kolumn (z nowym Typ_Kosztu)
+        expected_columns = ['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu']
+        
         if not csv_content:
-             return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt'])
+             return pd.DataFrame(columns=expected_columns)
         
         df = pd.read_csv(io.StringIO(csv_content))
         
@@ -61,13 +67,19 @@ def get_data(repo):
         if 'Koniec' in df.columns:
             df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
             
-        # --- MIGRACJA DANYCH (DODANIE KOLUMNY KOSZT JEŚLI NIE ISTNIEJE) ---
+        # --- MIGRACJA DANYCH ---
+        # 1. Dodajemy kolumnę Koszt (jeśli brak)
         if 'Koszt' not in df.columns:
             df['Koszt'] = 0.0
             
+        # 2. Dodajemy kolumnę Typ_Kosztu (jeśli brak) - to jest nowość!
+        # Domyślnie wszystko co już masz, uznajemy za 'Indywidualny' (bo to są atrakcje z kalendarza)
+        if 'Typ_Kosztu' not in df.columns:
+            df['Typ_Kosztu'] = 'Indywidualny'
+            
         return df.fillna("")
     except Exception:
-        return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt'])
+        return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu'])
 
 def update_data(repo, df):
     try:
@@ -89,15 +101,27 @@ if repo:
 else:
     st.stop()
 
-# --- DIALOG ---
+# --- DIALOG USTAWIEŃ (ZAKTUALIZOWANY) ---
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
     st.write("Ustawienia globalne")
-    new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
-    new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
+    with col2:
+        new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    
+    # NOWE POLE: LICZBA OSÓB
+    st.divider()
+    st.write("💰 Rozliczenia")
+    new_people = st.number_input("Liczba uczestników (do podziału kosztów stałych):", 
+                                 min_value=1, value=st.session_state.config_people)
+    
     if st.button("Zapisz", type="primary"):
         st.session_state.config_start_date = new_date
         st.session_state.config_days = new_days
+        st.session_state.config_people = new_people # Zapisujemy liczbę osób
         st.rerun()
 
 # --- HEADER ---
@@ -121,7 +145,11 @@ st.divider()
 # --- HELPERY ---
 def przygotuj_dane_do_siatki(df):
     grid_data = []
-    zaplanowane = df[df['Zaplanowane'].astype(str).str.upper() == 'TRUE']
+    # Filtrujemy tylko te, które są 'Indywidualny' (żeby koszty stałe nie wchodziły na siatkę przypadkiem)
+    # Chociaż na razie mamy tylko indywidualne, to zabezpieczenie na przyszłość.
+    mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
+    zaplanowane = df[mask]
+    
     for _, row in zaplanowane.iterrows():
         if pd.isna(row['Start']) or row['Start'] == "": continue
         start = row['Start']
@@ -154,10 +182,11 @@ def generuj_tlo_widoku(start_date, num_days):
     return pd.DataFrame(tlo_data)
 
 # --- ZAKŁADKI ---
+# Na razie bez zmian w interfejsie zakładek
 tab_edytor, tab_kalendarz, tab_koszty = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz", "💰 Podsumowanie Kosztów"])
 
 # ==========================================
-# ZAKŁADKA 1: EDYTOR (Z KOSZTEM)
+# ZAKŁADKA 1: EDYTOR
 # ==========================================
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
@@ -170,7 +199,6 @@ with tab_edytor:
             with c1:
                 czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
             with c2:
-                # NOWE POLE: KOSZT
                 koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
 
             submit = st.form_submit_button("Zapisz", type="primary")
@@ -180,7 +208,8 @@ with tab_edytor:
                 nowy = pd.DataFrame([{
                     'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
                     'Start': None, 'Koniec': None, 'Zaplanowane': False,
-                    'Koszt': float(koszt) # Zapisujemy koszt
+                    'Koszt': float(koszt),
+                    'Typ_Kosztu': 'Indywidualny' # Domyślnie dodajemy jako Indywidualny (do Kalendarza)
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                 if update_data(repo, updated_df):
@@ -189,11 +218,13 @@ with tab_edytor:
 
     with col_b:
         st.subheader("📦 Giełda pomysłów")
-        niezaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE'
-        do_pokazania = st.session_state.db[niezaplanowane_mask]
+        # Pokazujemy tylko Indywidualne na giełdzie (bo koszty stałe będą w innej zakładce)
+        mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
+                              (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        
+        do_pokazania = st.session_state.db[mask_niezaplanowane]
         
         if not do_pokazania.empty:
-            # Pokazujemy koszt w tabeli giełdy, żeby wiedzieć co ile kosztuje przed dodaniem
             event = st.dataframe(
                 do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
                 use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
@@ -209,7 +240,7 @@ with tab_edytor:
             st.info("Brak elementów.")
 
 # ==========================================
-# ZAKŁADKA 2: KALENDARZ (BEZ KOSZTÓW)
+# ZAKŁADKA 2: KALENDARZ
 # ==========================================
 with tab_kalendarz:
     current_start_date = st.session_state.config_start_date
@@ -257,7 +288,11 @@ with tab_kalendarz:
         if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
         if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
 
-        niezaplanowane = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE']
+        # Filtrujemy tylko niezaplanowane i TYLKO Indywidualne
+        mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
+                     (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        niezaplanowane = st.session_state.db[mask_przyb]
+        
         if not niezaplanowane.empty:
             filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
             if not filtrowane_df.empty:
@@ -286,7 +321,10 @@ with tab_kalendarz:
 
     with col_tools_right:
         st.subheader("🗑️ Zdejmowanie")
-        zaplanowane = st.session_state.db[st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE']
+        mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
+                   (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        zaplanowane = st.session_state.db[mask_zap]
+        
         if not zaplanowane.empty:
             zaplanowane_sorted = zaplanowane.sort_values(by='Start')
             opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
@@ -302,16 +340,17 @@ with tab_kalendarz:
         else: st.info("Kalendarz pusty.")
 
 # ==========================================
-# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (FIX 2.0)
+# ZAKŁADKA 3: PODSUMOWANIE KOSZTÓW (BEZ ZMIAN NA RAZIE)
 # ==========================================
 with tab_koszty:
     st.subheader("💸 Ile to będzie kosztować?")
     
-    # 1. Filtrowanie (Tylko Zaplanowane)
-    zaplanowane_mask = st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE'
-    df_costs = st.session_state.db[zaplanowane_mask].copy()
+    # Filtrujemy tylko Zaplanowane i tylko Indywidualne (stara logika, nową dodamy w kolejnym kroku)
+    mask_koszty = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
+                  (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     
-    # Zabezpieczenie: konwersja kosztu na liczbę
+    df_costs = st.session_state.db[mask_koszty].copy()
+    
     df_costs['Koszt'] = pd.to_numeric(df_costs['Koszt'], errors='coerce').fillna(0)
     
     if not df_costs.empty:
@@ -342,27 +381,16 @@ with tab_koszty:
                 
         with col_chart:
             st.write("**📅 Rozkład wydatków w czasie**")
-            
-            # 1. Grupujemy po dacie
-            # Tworzymy kolumnę pomocniczą 'Data_Group' do grupowania
             df_costs['Data_Group'] = df_costs['Start'].dt.date
-            
-            # Agregacja (sumowanie kosztów dla dnia)
             daily_costs = df_costs.groupby('Data_Group')['Koszt'].sum().reset_index()
-            
-            # 2. PRZYGOTOWANIE DANYCH DO WYKRESU (KLUCZOWE!)
-            # Tworzymy etykietę jako zwykły tekst "DD.MM" (np. "25.07")
             daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
-            # Tworzymy klucz sortowania jako tekst ISO "YYYY-MM-DD" (żeby 01.08 było po 31.07)
             daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
             
-            # 3. WYKRES BAR CHART
             bar_chart = alt.Chart(daily_costs).mark_bar(
                 color='#FF4B4B',
                 cornerRadiusTopLeft=3,
                 cornerRadiusTopRight=3
             ).encode(
-                # Oś X: Wyświetlamy Etykietę, ale Sortujemy po Sort_Key
                 x=alt.X('Etykieta:O', 
                         title='Dzień',
                         sort=alt.EncodingSortField(field="Sort_Key", order="ascending"),
@@ -373,7 +401,6 @@ with tab_koszty:
                     alt.Tooltip('Koszt', format='.2f', title='Kwota')
                 ]
             ).properties(height=400)
-            
             st.altair_chart(bar_chart, use_container_width=True)
             
     else:
