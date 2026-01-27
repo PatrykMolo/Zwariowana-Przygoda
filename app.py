@@ -166,12 +166,11 @@ def settings_dialog():
                 st.success("Zapisano!")
                 st.rerun()
 
-# --- HEADER (WERSJA PANCERNA - BEZ POTRÓJNYCH CUDZYSŁOWÓW) ---
+# --- HEADER (PLANNER WYJAZDOWY) ---
 col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
 
 with col_title:
-    # 1. Definicje zmiennych (zwykłe stringi, zero magii)
-    # Ikona Github
+    # 1. Definicje ikon (Zmienne pomocnicze)
     icon_github = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
         'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
@@ -180,7 +179,6 @@ with col_title:
         '</svg>'
     )
     
-    # Ikona Auta (używamy f-string, ale w nawiasach, żeby uniknąć błędów)
     icon_car = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" '
         f'fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">'
@@ -190,22 +188,28 @@ with col_title:
         '</svg>'
     )
 
-    # 2. Budowa HTML (korzystamy z nawiasów, Python sam sklei linijki)
+    # 2. Budowa HTML
     header_html = (
         f'<div style="background-color: {COLOR_SEC}; padding: 2rem; border-radius: 16px; '
         'box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: space-between;">'
         
         # LEWA STRONA (TEKST)
         '<div style="flex: 1;">'
+        # Tytuł Główny
         f'<h1 style="color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;">'
         f'ZWARIOWANA<br>PRZYGODA <span style="color:{COLOR_ACCENT}">2026</span>'
         '</h1>'
         
-        # LINIA
-        f'<div style="height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 15px 0; border-radius: 2px;"></div>'
+        # NOWOŚĆ: Podtytuł "PLANNER WYJAZDOWY"
+        f'<p style="margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;">'
+        'PLANNER WYJAZDOWY'
+        '</p>'
         
-        # PODPIS GITHUB
-        f'<p style="margin: 0; font-size: 1rem; color: {COLOR_TEXT}; opacity: 0.8; font-family: monospace; display: flex; align-items: center; gap: 8px;">'
+        # Linia ozdobna
+        f'<div style="height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 20px 0 15px 0; border-radius: 2px;"></div>'
+        
+        # GitHub Info
+        f'<p style="margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;">'
         f'{icon_github} Baza danych: GitHub Repository'
         '</p>'
         '</div>'
@@ -218,13 +222,12 @@ with col_title:
         '</div>'
     )
 
-    # 3. Renderowanie
     st.markdown(header_html, unsafe_allow_html=True)
 
 with col_settings:
     if st.button("⚙️ Ustawienia", use_container_width=True):
         settings_dialog()
-
+        
 st.divider()
 
 # --- HELPERY ---
