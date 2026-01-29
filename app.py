@@ -7,14 +7,19 @@ import io
 import json
 import base64
 
-# --- TWOJA NOWA PALETA (RETRO DARK) ---
-COLOR_BG = "#1e2630"        # Gunmetal (Ciemne Tło)
-COLOR_TEXT = "#faf9dd"      # Cream (Jasny Tekst)
-COLOR_ACCENT = "#d37759"    # Terracotta (Główny Akcent - Atrakcje/Przyciski)
-COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny - Trasa/Nagłówek) - dodany dla kontrastu
+# ==========================================
+# 🎨 PALETA KOLORÓW (RETRO DARK)
+# ==========================================
+COLOR_BG = "#1e2630"        # Gunmetal (Tło)
+COLOR_TEXT = "#faf9dd"      # Cream (Tekst)
+COLOR_ACCENT = "#d37759"    # Terracotta (Akcent: Przyciski, Atrakcje)
+COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 
-# --- KONFIGURACJA DOMYŚLNA ---
+# ==========================================
+# ⚙️ KONFIGURACJA DOMYŚLNA
+# ==========================================
 DEFAULT_CONFIG = {
+    "trip_name": "Moja Wyprawa 2026", # <--- NOWOŚĆ
     "start_date": "2026-07-24",
     "days": 14,
     "people": 12
@@ -24,89 +29,45 @@ SZEROKOSC_KOLUMNY_DZIEN = 100
 NAZWA_PLIKU_BAZY = "data.csv"
 NAZWA_PLIKU_CONFIG = "config.json"
 
-st.set_page_config(page_title="Planer Wycieczki 2026", layout="wide")
+st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
-# --- FUNKCJA POMOCNICZA DO OBRAZKÓW BASE64 ---
-def image_to_base64(image_path):
-    """Wczytuje obrazek i konwertuje go na ciąg base64."""
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode('utf-8')
-    except FileNotFoundError:
-        return None # Zwróć None, jeśli plik nie istnieje
-        
-# --- CSS (CLEAN APP MODE - BEZ PASKÓW STREAMLIT) ---
+# ==========================================
+# 💅 CSS & STYLIZACJA (KIOSK MODE + FONT)
+# ==========================================
 st.markdown(
     f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
 
     /* 1. TYPOGRAFIA */
-    html, body {{
-        font-family: 'Montserrat', sans-serif;
-    }}
-    h1, h2, h3, p, div, span {{
-        font-family: 'Montserrat', sans-serif;
-    }}
-    h1, h2, h3 {{
-        font-weight: 700 !important;
-    }}
+    html, body {{ font-family: 'Montserrat', sans-serif; }}
+    h1, h2, h3, p, div, span {{ font-family: 'Montserrat', sans-serif; }}
+    h1, h2, h3 {{ font-weight: 700 !important; }}
 
-    /* 2. UKRYWANIE ELEMENTÓW INTERFEJSU STREAMLIT (KIOSK MODE) */
-    
-    /* Ukrywa górny pasek (Hamburger menu, Deploy button, kolorowy pasek) */
-    header {{
-        visibility: hidden;
-    }}
-    
-    /* Ukrywa stopkę "Made with Streamlit" */
-    footer {{
-        visibility: hidden;
-    }}
-    
-    /* Ukrywa Twój awatar i ikonę "Viewer" na dole po prawej */
-    .viewerBadge_container__1QSob {{
-        display: none !important;
-    }}
-    [data-testid="stStatusWidget"] {{
-        display: none !important;
-    }}
-    
-    /* Ukrywa menu z trzema kropkami (jeśli header nie wystarczy) */
-    #MainMenu {{
-        visibility: hidden;
-    }}
+    /* 2. UKRYWANIE ELEMENTÓW STREAMLIT (KIOSK MODE) */
+    header {{ visibility: hidden; }}
+    footer {{ visibility: hidden; }}
+    .viewerBadge_container__1QSob {{ display: none !important; }}
+    [data-testid="stStatusWidget"] {{ display: none !important; }}
+    #MainMenu {{ visibility: hidden; }}
 
     /* 3. POPRAWKI UKŁADU */
-    
-    /* Zmniejszamy odstęp na górze, skoro nie ma paska narzędzi */
-    .block-container {{
-        padding-top: 1rem !important;
-    }}
-
-    /* Checkboxy */
+    .block-container {{ padding-top: 1rem !important; }}
     div[data-testid="stCheckbox"] {{ margin-bottom: -10px; }}
     
-    /* Przyciski - Ceglasty Akcent */
+    /* Przyciski */
     div.stButton > button:first-child {{ 
-        height: 3em; 
-        margin-top: 1.5em; 
-        background-color: {COLOR_ACCENT}; 
-        color: {COLOR_TEXT}; 
-        border: none;
-        font-weight: bold;
-        border-radius: 8px;
+        height: 3em; margin-top: 1.5em; 
+        background-color: {COLOR_ACCENT}; color: {COLOR_TEXT}; 
+        border: none; font-weight: bold; border-radius: 8px;
     }}
     div.stButton > button:first-child:hover {{
-        background-color: #b06045; 
-        color: {COLOR_TEXT};
+        background-color: #b06045; color: {COLOR_TEXT};
     }}
     
     /* Duże Liczby (Metrics) */
     [data-testid="stMetricValue"] {{ 
-        font-size: 3rem; 
-        color: {COLOR_ACCENT}; 
-        font-weight: 700;
+        font-size: 3rem; color: {COLOR_ACCENT}; font-weight: 700;
     }}
     
     /* Zakładki */
@@ -119,7 +80,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- GITHUB & OBSŁUGA DANYCH ---
+# ==========================================
+# 🔧 FUNKCJE POMOCNICZE
+# ==========================================
+def image_to_base64(image_path):
+    """Wczytuje obrazek i konwertuje go na ciąg base64."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+    except FileNotFoundError:
+        return None
+
 def init_github():
     try:
         token = st.secrets["github"]["token"]
@@ -137,15 +108,12 @@ def get_data(repo):
         contents = repo.get_contents(NAZWA_PLIKU_BAZY)
         csv_content = contents.decoded_content.decode("utf-8")
         expected_columns = ['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu']
-        
         if not csv_content: return pd.DataFrame(columns=expected_columns)
-        
         df = pd.read_csv(io.StringIO(csv_content))
         if 'Start' in df.columns: df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns: df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
         if 'Koszt' not in df.columns: df['Koszt'] = 0.0
         if 'Typ_Kosztu' not in df.columns: df['Typ_Kosztu'] = 'Indywidualny'
-            
         return df.fillna("")
     except Exception:
         return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu'])
@@ -156,6 +124,8 @@ def get_config(repo):
         json_content = contents.decoded_content.decode("utf-8")
         config = json.loads(json_content)
         config['start_date'] = datetime.strptime(config['start_date'], "%Y-%m-%d").date()
+        # Fallback dla starego configu bez trip_name
+        if 'trip_name' not in config: config['trip_name'] = DEFAULT_CONFIG['trip_name']
         return config
     except Exception:
         defaults = DEFAULT_CONFIG.copy()
@@ -189,102 +159,106 @@ def update_config(repo, new_config):
         st.error(f"Błąd zapisu ustawień: {e}")
         return False
 
-# --- INICJALIZACJA ---
+# --- POBRANIE DANYCH ---
 repo = init_github()
 if repo:
     if 'db' not in st.session_state: st.session_state.db = get_data(repo)
-    st.session_state.db = get_data(repo)
+    # Refresh na wszelki wypadek
+    st.session_state.db = get_data(repo) 
+    
     global_config = get_config(repo)
+    st.session_state.config_trip_name = global_config.get('trip_name', DEFAULT_CONFIG['trip_name'])
     st.session_state.config_start_date = global_config['start_date']
     st.session_state.config_days = global_config['days']
     st.session_state.config_people = global_config['people']
 else: st.stop()
 
-# --- DIALOG USTAWIEŃ ---
+# ==========================================
+# 🏷️ DIALOG USTAWIEŃ
+# ==========================================
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
-    st.write("Ustawienia globalne")
+    st.write("Główne informacje")
+    # NOWE POLE: NAZWA WYPRAWY
+    new_name = st.text_input("Nazwa Wyprawy (tytuł strony):", value=st.session_state.config_trip_name)
+    
     c1, c2 = st.columns(2)
     with c1: new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
     with c2: new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    
     st.divider()
     st.write("💰 Rozliczenia")
     new_people = st.number_input("Liczba uczestników:", min_value=1, value=st.session_state.config_people)
     
     if st.button("Zapisz w chmurze", type="primary"):
         with st.spinner("Aktualizuję konfigurację..."):
-            new_conf_dict = {"start_date": new_date, "days": new_days, "people": new_people}
+            new_conf_dict = {
+                "trip_name": new_name,
+                "start_date": new_date, 
+                "days": new_days, 
+                "people": new_people
+            }
             if update_config(repo, new_conf_dict):
+                st.session_state.config_trip_name = new_name
                 st.session_state.config_start_date = new_date
                 st.session_state.config_days = new_days
                 st.session_state.config_people = new_people
                 st.success("Zapisano!")
                 st.rerun()
 
-# --- HEADER (NOWY LOGOTYP BASE64) ---
-col_title, col_settings = st.columns([6, 1], vertical_alignment="center")
+# ==========================================
+# 🖼️ HEADER (LOGOTYP + DYNAMICZNY TYTUŁ)
+# ==========================================
+col_title, col_settings = st.columns([6, 1]) 
 
 with col_title:
-    # 1. Definicje ikon
-    # Ikona GitHub (bez zmian)
-    icon_github = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
-        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
-        'style="vertical-align: middle; margin-bottom: 3px;">'
-        '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>'
-        '</svg>'
-    )
-
-    # NOWOŚĆ: Wczytanie Twojego logotypu jako Base64
-    logo_base64 = image_to_base64("logo.png")
+    # 1. Logika Dynamicznego Tytułu
+    full_title = st.session_state.config_trip_name
+    title_parts = full_title.rsplit(' ', 1) # Dzielimy po ostatniej spacji
     
+    if len(title_parts) > 1:
+        # Jeśli są co najmniej 2 słowa (np. "Wyprawa 2026"), kolorujemy ostatnie
+        title_html = f"{title_parts[0]} <span style='color:{COLOR_ACCENT}'>{title_parts[1]}</span>"
+    else:
+        # Jeśli jedno słowo, wszystko na jasno
+        title_html = full_title
+
+    # 2. Ikony
+    icon_github = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-bottom: 3px;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>'
+    
+    # 3. Logotyp
+    logo_base64 = image_to_base64("logo.png")
     if logo_base64:
-        # Jeśli plik logo.png istnieje, stwórz tag <img>
-        # Ustawiamy szerokość na 140px i zachowujemy odbicie lustrzane dla efektu pędu w prawo
         icon_logotype = f'<img src="data:image/png;base64,{logo_base64}" width="140" style="transform: scaleX(-1);">'
     else:
-        # Fallback (zapas): jeśli plik nie istnieje, wyświetl stary SVG auta
-        icon_logotype = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" '
-            f'fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round">'
-            '<path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/>'
-            f'<circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
-            f'<circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/>'
-            '</svg>'
-        )
+        # Fallback SVG Auto
+        icon_logotype = f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/><circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/><circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/></svg>'
 
-    # 2. Budowa HTML
-    header_html = (
-        f'<div style="background-color: {COLOR_SEC}; padding: 2rem; border-radius: 16px; '
-        'box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: space-between;">'
-        
-        # LEWA STRONA (TEKST)
-        '<div style="flex: 1;">'
-        f'<h1 style="color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;">'
-        f'ZWARIOWANA<br>PRZYGODA <span style="color:{COLOR_ACCENT}">2026</span>'
-        '</h1>'
-        f'<p style="margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;">PLANNER WYJAZDOWY</p>'
-        f'<div style="height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 20px 0 15px 0; border-radius: 2px;"></div>'
-        f'<p style="margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;">{icon_github} Baza danych: GitHub Repository</p>'
-        '</div>'
-        
-        # PRAWA STRONA (LOGOTYP)
-        # Usuwamy dodatkowy div z margin-left i transform, bo są już w samym tagu <img>
-        f'<div style="flex: 0 0 auto; margin-left: 20px;">{icon_logotype}</div>'
-        
-        '</div>'
-    )
+    # 4. Konstrukcja HTML ("Cegła po cegle")
+    html = ""
+    html += f"<div style='background-color: {COLOR_SEC}; padding: 2rem; border-radius: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: space-between;'>"
+    html += "<div style='flex: 1;'>"
+    
+    # Używamy wygenerowanego title_html
+    html += f"<h1 style='color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;'>{title_html}</h1>"
+    
+    html += f"<p style='margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;'>PLANNER WYJAZDOWY</p>"
+    html += f"<div style='height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 20px 0 15px 0; border-radius: 2px;'></div>"
+    html += f"<p style='margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;'>{icon_github} Baza danych: GitHub Repository</p>"
+    html += "</div>"
+    html += f"<div style='flex: 0 0 auto; margin-left: 20px;'>{icon_logotype}</div>"
+    html += "</div>"
 
-    st.markdown(header_html, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
 
 with col_settings:
-    st.write("") # Pusty odstęp dla wyrównania
+    st.write("") 
     if st.button("⚙️", use_container_width=True):
         settings_dialog()
-        
-st.divider()
 
-# --- HELPERY ---
+# ==========================================
+# 📊 HELPERY DO WYKRESÓW
+# ==========================================
 def przygotuj_dane_do_siatki(df):
     grid_data = []
     mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
@@ -320,7 +294,9 @@ def generuj_tlo_widoku(start_date, num_days):
             })
     return pd.DataFrame(tlo_data)
 
-# --- ZAKŁADKI ---
+# ==========================================
+# 📑 GŁÓWNE ZAKŁADKI
+# ==========================================
 tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
     "📝 Edytor i Giełda", 
     "📅 Kalendarz", 
@@ -328,9 +304,7 @@ tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
     "💰 Podsumowanie"
 ])
 
-# ==========================================
-# ZAKŁADKA 1: EDYTOR
-# ==========================================
+# --- ZAKŁADKA 1: EDYTOR ---
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
@@ -371,20 +345,15 @@ with tab_edytor:
                         if update_data(repo, updated_df): st.rerun()
         else: st.info("Brak elementów.")
 
-# ==========================================
-# ZAKŁADKA 2: KALENDARZ (HYBRYDOWY: DESKTOP & MOBILE)
-# ==========================================
+# --- ZAKŁADKA 2: KALENDARZ (HYBRYDOWY) ---
 with tab_kalendarz:
-    # 1. Przełącznik Widoku
     col_switch, _ = st.columns([1, 4])
     with col_switch:
         mobile_mode = st.toggle("📱 Widok Mobilny (Lista)", value=False)
 
-    # 2. Logika Danych
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
     
-    # Pobieramy tylko zaplanowane i posortowane chronologicznie
     mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     df_events = st.session_state.db[mask_zap].copy()
@@ -393,91 +362,59 @@ with tab_kalendarz:
         df_events['Start'] = pd.to_datetime(df_events['Start'])
         df_events = df_events.sort_values(by='Start')
 
-    # --- WIDOK MOBILNY (AGENDA) ---
-   # --- WIDOK MOBILNY (NAPRAWIONY - METODA "CEGŁA PO CEGLE") ---
+    # >> WIDOK MOBILNY
     if mobile_mode:
         if df_events.empty:
             st.info("Nic jeszcze nie zaplanowano.")
         else:
-            # Grupujemy wydarzenia po dniach
             df_events['Date_Only'] = df_events['Start'].dt.date
             unique_dates = sorted(df_events['Date_Only'].unique())
 
             for day in unique_dates:
-                # Nagłówek Dnia
                 day_map = {'Monday': 'Poniedziałek', 'Tuesday': 'Wtorek', 'Wednesday': 'Środa', 'Thursday': 'Czwartek', 'Friday': 'Piątek', 'Saturday': 'Sobota', 'Sunday': 'Niedziela'}
                 day_name = day.strftime('%A')
                 day_pl = day_map.get(day_name, day_name)
                 
-                # Wyświetlamy nagłówek dnia jako Markdown (to działało dobrze)
                 st.markdown(f"#### 🗓️ {day.strftime('%d.%m')} • {day_pl}")
-                
                 daily_items = df_events[df_events['Date_Only'] == day]
                 
                 for _, row in daily_items.iterrows():
-                    # 1. Przygotowanie zmiennych (poza HTMLem)
                     start_time = row['Start'].strftime('%H:%M')
                     end_time = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%H:%M')
                     duration = int(row['Czas (h)'])
                     title = row['Tytuł']
                     cat = row['Kategoria']
-                    
-                    # Koszt - formatowanie
-                    try:
-                        cost_val = float(row['Koszt'])
-                    except:
-                        cost_val = 0.0
+                    try: cost_val = float(row['Koszt'])
+                    except: cost_val = 0.0
                     
                     cost_badge = ""
                     if cost_val > 0:
-                        # Badge kosztu jako osobny string HTML
                         cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>"
 
-                    # Kolory
                     if cat == "Atrakcja":
-                        bg_color = COLOR_ACCENT # Ceglasty
-                        text_color = "#faf9dd"  # Jasny kremowy (dla kontrastu na cegle)
+                        bg_color = COLOR_ACCENT; text_color = "#faf9dd"
                     elif cat == "Trasa":
-                        bg_color = COLOR_SEC    # Morski
-                        text_color = "#ffffff"  # Biały
+                        bg_color = COLOR_SEC; text_color = "#ffffff"
                     else:
-                        bg_color = "#444444"    # Szary
-                        text_color = "#dddddd"
+                        bg_color = "#444444"; text_color = "#dddddd"
 
-                    # 2. Budowanie HTML linijka po linijce (Bezpieczna metoda)
                     card_html = ""
-                    # Otwarcie kontenera
                     card_html += f"<div style='background-color: {bg_color}; color: {text_color}; padding: 15px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.15); border-left: 6px solid rgba(0,0,0,0.2);'>"
-                    
-                    # Wiersz 1: Czas i Koszt
-                    card_html += f"<div style='font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px; display: flow-root;'>" # flow-root naprawia float
-                    card_html += f"<span>⏱️ {start_time} - {end_time} ({duration}h)</span>"
-                    card_html += f"{cost_badge}"
-                    card_html += "</div>"
-                    
-                    # Wiersz 2: Tytuł
+                    card_html += f"<div style='font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px; display: flow-root;'>"
+                    card_html += f"<span>⏱️ {start_time} - {end_time} ({duration}h)</span>{cost_badge}</div>"
                     card_html += f"<div style='font-size: 1.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 4px;'>{title}</div>"
-                    
-                    # Wiersz 3: Kategoria
                     card_html += f"<div style='font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;'>{cat}</div>"
-                    
-                    # Zamknięcie kontenera
                     card_html += "</div>"
-
-                    # 3. Renderowanie
                     st.markdown(card_html, unsafe_allow_html=True)
-                
-                # Odstęp po każdym dniu
-                st.write("")
+                st.write("") 
 
-    # --- WIDOK DESKTOP (ALTAIR) ---
+    # >> WIDOK DESKTOP
     else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
         
         domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
         range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
-        
         total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
 
         st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
@@ -498,19 +435,9 @@ with tab_kalendarz:
             layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
             )
-            
-            # POPRAWIONE ETYKIETY (BOLD + LEFT ALIGN)
             layer_text = chart_data.mark_text(
-                dx=-42,                 
-                align='left',           
-                baseline='middle',
-                fontSize=11,            
-                fontWeight='bold',      
-                limit=SZEROKOSC_KOLUMNY_DZIEN-10
-            ).encode(
-                text=alt.Text('Tytuł_Display'),
-                color=alt.value(COLOR_BG) 
-            )
+                dx=-42, align='left', baseline='middle', fontSize=11, fontWeight='bold', limit=SZEROKOSC_KOLUMNY_DZIEN-10
+            ).encode(text=alt.Text('Tytuł_Display'), color=alt.value(COLOR_BG))
             final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
         else:
             final_chart = layer_bg.properties(height=600, width=total_width)
@@ -519,11 +446,10 @@ with tab_kalendarz:
         
     st.divider()
 
-    # --- PRZYBORNIK (WSPÓLNY DLA OBU WIDOKÓW) ---
+    # --- PRZYBORNIK ---
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
         st.subheader("📌 Przybornik")
-        # (Reszta kodu przybornika bez zmian...)
         c1, c2, c3 = st.columns(3)
         filtry = []
         if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
@@ -556,7 +482,6 @@ with tab_kalendarz:
 
     with col_tools_right:
         st.subheader("🗑️ Zdejmowanie")
-        # (Reszta kodu zdejmowania bez zmian...)
         mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                    (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         zaplanowane = st.session_state.db[mask_zap]
@@ -574,9 +499,7 @@ with tab_kalendarz:
                         if update_data(repo, st.session_state.db): st.rerun()
         else: st.info("Kalendarz pusty.")
 
-# ==========================================
-# ZAKŁADKA 3: KOSZTY WSPÓLNE
-# ==========================================
+# --- ZAKŁADKA 3: KOSZTY WSPÓLNE ---
 with tab_wspolne:
     col_fixed, col_fuel = st.columns(2)
     with col_fixed:
@@ -633,9 +556,7 @@ with tab_wspolne:
                     if update_data(repo, updated_df): st.rerun()
     else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
-# ==========================================
-# ZAKŁADKA 4: PODSUMOWANIE (NOWE KOLORY)
-# ==========================================
+# --- ZAKŁADKA 4: PODSUMOWANIE ---
 with tab_podsumowanie:
     st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
     
@@ -676,8 +597,6 @@ with tab_podsumowanie:
         if not df_pie.empty:
             total_pie = df_pie['Wartość'].sum()
             df_pie['Procent'] = df_pie['Wartość'] / total_pie
-            
-            # Paleta: Cegła, Zgaszony Morski, Krem, Szary
             pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, "gray"])
             
             base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
@@ -685,7 +604,6 @@ with tab_podsumowanie:
                 color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
                 tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f'), alt.Tooltip('Procent', format='.1%')]
             )
-            # Białe etykiety dla czytelności na ciemnym tle
             text = base_pie.mark_text(radius=120, size=14).encode(
                 text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"),
                 color=alt.value(COLOR_TEXT) 
@@ -713,7 +631,6 @@ with tab_podsumowanie:
                         axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)),
                 y=alt.Y('Koszt:Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT))
             )
-            # Słupki w kolorze Ceglastym
             bars = base_bar.mark_bar(color=COLOR_ACCENT, cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                 tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')]
             )
@@ -724,3 +641,21 @@ with tab_podsumowanie:
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
 
+# ==========================================
+# 📲 QR CODE W SIDEBARZE
+# ==========================================
+with st.sidebar:
+    st.markdown("---")
+    st.markdown(f"<h3 style='text-align: center; color: {COLOR_TEXT}; margin-bottom: 10px;'>📲 Udostępnij</h3>", unsafe_allow_html=True)
+    
+    # TUTAJ PODMIEŃ LINK NA SWÓJ (Z PRZEGLĄDARKI)
+    app_url = "https://twoja-apka.streamlit.app" 
+    
+    qr_color = COLOR_ACCENT.lstrip('#') 
+    qr_html = f"""
+    <div style="background-color: white; padding: 20px; border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 10px;">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;">
+    </div>
+    """
+    st.markdown(qr_html, unsafe_allow_html=True)
+    st.caption("Zeskanuj telefonem, aby dołączyć do planowania!")
