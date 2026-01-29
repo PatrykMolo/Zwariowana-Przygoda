@@ -1,0 +1,15 @@
+Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
+Salina Turda,Atrakcja,3.0,2026-07-25 15:00:00,2026-07-25 18:00:00,True,40.0,Indywidualny
+Paliwo: BMW (3400km),Trasa,0.0,,,False,1122.0,Paliwo
+Paliwo: Citroen SpaceTourer (3400km),Trasa,0.0,,,False,1734.0,Paliwo
+Casa Di Mare,Nocleg,0.0,,,False,3700.0,Wspólny
+Hillside Guesthouse,Nocleg,0.0,,,False,2600.0,Wspólny
+Citroen Wynajem,Wynajem Busa,0.0,,,False,2750.0,Wspólny
+Winiety BMW,Winiety,0.0,,,False,201.0,Wspólny
+Winiety Citroen,Winiety,0.0,,,False,235.0,Wspólny
+Turda-Cartisoara,Trasa,3.0,2026-07-25 18:00:00,2026-07-25 21:00:00,True,0.0,Indywidualny
+Transfagarasan,Atrakcja,3.0,2026-07-26 08:00:00,2026-07-26 11:00:00,True,0.0,Indywidualny
+Transfagarasan-Balchik,Trasa,6.0,2026-07-26 11:00:00,2026-07-26 17:00:00,True,0.0,Indywidualny
+Restauracja,Odpoczynek,2.0,2026-07-26 19:00:00,2026-07-26 21:00:00,True,50.0,Indywidualny
+Kraków - Turda,Trasa,10.0,2026-07-25 04:00:00,2026-07-25 14:00:00,True,0.0,Indywidualny
+Mlody,Atrakcja,4.0,,2026-07-28 17:00:00,False,30.0,Indywidualny
