@@ -371,7 +371,7 @@ tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs(["📝 Edytor
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        st.subheader("Dodaj atrakcję (Indywidualne)")
+        st.subheader("Dodaj aktywność")
         with st.form("dodawanie_form", clear_on_submit=True):
             tytul = st.text_input("Tytuł")
             kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
@@ -472,7 +472,7 @@ with tab_kalendarz:
     st.divider()
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
-        st.subheader("📌 Przybornik")
+        st.subheader("Dodaj do kalendarza")
         c1, c2, c3 = st.columns(3)
         filtry = []
         if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
@@ -504,7 +504,7 @@ with tab_kalendarz:
         else: st.success("Pusto!")
 
     with col_tools_right:
-        st.subheader("🗑️ Zdejmowanie")
+        st.subheader("🗑️ Odepnij")
         mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         zaplanowane = st.session_state.db[mask_zap]
         if not zaplanowane.empty:
@@ -529,7 +529,7 @@ with tab_wspolne:
     with col_fixed:
         st.markdown("### 🏨 Noclegi i Opłaty")
         with st.form("form_wspolne", clear_on_submit=True):
-            nazwa = st.text_input("Nazwa (np. Oli House, Winiety)")
+            nazwa = st.text_input("Nazwa")
             kategoria_wsp = st.selectbox("Rodzaj", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
             koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
             if st.form_submit_button("Dodaj do wspólnych"):
@@ -544,13 +544,13 @@ with tab_wspolne:
     with col_fuel:
         st.markdown("### ⛽ Kalkulator Trasy")
         with st.container(border=True):
-            auto_nazwa = st.text_input("Auto (np. BMW, Bus)", value="BMW")
+            auto_nazwa = st.text_input("Samochód", value="BMW")
             dystans = st.number_input("Dystans (km)", min_value=0, value=3400, step=10)
             spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.1)
             cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.01)
             koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
             st.markdown(f"**Szacowany koszt:** :red[{koszt_trasy:.2f} PLN]")
-            if st.button("➕ Dodaj auto do rozliczenia"):
+            if st.button("➕ Dodaj samochód do rozliczenia"):
                 tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
                 nowy = pd.DataFrame([{'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 'Start': None, 'Koniec': None, 'Zaplanowane': False, 'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'}])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
@@ -578,7 +578,7 @@ with tab_wspolne:
 
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
-    st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
+    st.subheader("Podsumowanie Wyjazdu")
     mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     df_A = st.session_state.db[mask_A].copy(); df_A['Koszt'] = pd.to_numeric(df_A['Koszt'], errors='coerce').fillna(0); sum_A = df_A['Koszt'].sum()
     mask_B = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
@@ -593,7 +593,7 @@ with tab_podsumowanie:
 
     col_left, col_right = st.columns([1, 2])
     with col_left:
-        st.markdown("##### 🍰 Struktura kosztów")
+        st.markdown("Struktura kosztów")
         pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
         if not df_B.empty:
             grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
