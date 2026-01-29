@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime, timedelta, date, time
-from github import Github, Auth
+from github import Github, Auth, GithubException
 import io
 import json
 import base64
+import uuid
 
 # ==========================================
 # 🎨 PALETA KOLORÓW (RETRO DARK)
@@ -16,18 +17,11 @@ COLOR_ACCENT = "#d37759"    # Terracotta (Akcent: Przyciski, Atrakcje)
 COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 
 # ==========================================
-# ⚙️ KONFIGURACJA DOMYŚLNA
+# ⚙️ KONFIGURACJA PLIKÓW
 # ==========================================
-DEFAULT_CONFIG = {
-    "trip_name": "Moja Wyprawa 2026", # <--- NOWOŚĆ
-    "start_date": "2026-07-24",
-    "days": 14,
-    "people": 12
-}
-
-SZEROKOSC_KOLUMNY_DZIEN = 100 
-NAZWA_PLIKU_BAZY = "data.csv"
-NAZWA_PLIKU_CONFIG = "config.json"
+REGISTRY_FILE = "registry.json"  # Plik trzymający listę wypraw
+DEFAULT_TRIP_ID = "default"
+# Szablony nazw plików: {id}_data.csv / {id}_config.json
 
 st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
@@ -40,11 +34,10 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
 
     /* 1. TYPOGRAFIA */
-    html, body {{ font-family: 'Montserrat', sans-serif; }}
-    h1, h2, h3, p, div, span {{ font-family: 'Montserrat', sans-serif; }}
+    html, body, h1, h2, h3, p, div, span {{ font-family: 'Montserrat', sans-serif; }}
     h1, h2, h3 {{ font-weight: 700 !important; }}
 
-    /* 2. UKRYWANIE ELEMENTÓW STREAMLIT (KIOSK MODE) */
+    /* 2. UKRYWANIE ELEMENTÓW STREAMLIT */
     header {{ visibility: hidden; }}
     footer {{ visibility: hidden; }}
     .viewerBadge_container__1QSob {{ display: none !important; }}
@@ -75,22 +68,19 @@ st.markdown(
         color: {COLOR_ACCENT} !important;
         border-bottom-color: {COLOR_ACCENT} !important;
     }}
+    
+    /* Style dla Managera Zapisów */
+    .trip-card {{
+        padding: 10px; border-radius: 8px; border: 1px solid #444; margin-bottom: 5px;
+    }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # ==========================================
-# 🔧 FUNKCJE POMOCNICZE
+# 🔧 GITHUB & FILE SYSTEM 2.0
 # ==========================================
-def image_to_base64(image_path):
-    """Wczytuje obrazek i konwertuje go na ciąg base64."""
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode('utf-8')
-    except FileNotFoundError:
-        return None
-
 def init_github():
     try:
         token = st.secrets["github"]["token"]
@@ -103,161 +93,288 @@ def init_github():
         st.error(f"Błąd połączenia z GitHub: {e}")
         return None
 
-def get_data(repo):
+def image_to_base64(image_path):
     try:
-        contents = repo.get_contents(NAZWA_PLIKU_BAZY)
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+    except FileNotFoundError: return None
+
+# --- OBSŁUGA REJESTRU WYPRAW ---
+def get_registry(repo):
+    """Pobiera listę wypraw. Jeśli nie istnieje, tworzy nową (z migracją starej bazy)."""
+    try:
+        contents = repo.get_contents(REGISTRY_FILE)
+        return json.loads(contents.decoded_content.decode("utf-8"))
+    except Exception:
+        # PLIKU REJESTRU NIE MA -> ROBIMY MIGRACJĘ LUB INICJALIZACJĘ
+        # Sprawdzamy czy istnieje stary plik data.csv
+        try:
+            old_data = repo.get_contents("data.csv")
+            # Mamy stary plik! Przemianujmy go na format nowego systemu
+            repo.update_file("default_data.csv", "Migracja na system Multi-Save", old_data.decoded_content, old_data.sha)
+            repo.delete_file("data.csv", "Cleanup po migracji", old_data.sha)
+            
+            # To samo dla configu
+            try:
+                old_conf = repo.get_contents("config.json")
+                repo.update_file("default_config.json", "Migracja configu", old_conf.decoded_content, old_conf.sha)
+                repo.delete_file("config.json", "Cleanup", old_conf.sha)
+            except: pass # Brak configu to nie problem
+            
+            st.toast("Dokonano migracji starej bazy do nowego systemu!", icon="📦")
+        except:
+            pass # Brak starej bazy, zaczynamy na czysto
+
+        # Tworzymy nowy rejestr
+        new_registry = {
+            "current": "default",
+            "trips": {"default": "Moja Pierwsza Wyprawa"}
+        }
+        repo.create_file(REGISTRY_FILE, "Init Registry", json.dumps(new_registry, indent=4))
+        return new_registry
+
+def update_registry(repo, registry_data):
+    try:
+        contents = repo.get_contents(REGISTRY_FILE)
+        repo.update_file(contents.path, "Update Registry", json.dumps(registry_data, indent=4), contents.sha)
+        return True
+    except Exception as e:
+        st.error(f"Błąd zapisu rejestru: {e}")
+        return False
+
+# --- POBIERANIE DANYCH KONKRETNEJ WYPRAWY ---
+def get_trip_files(trip_id):
+    return f"{trip_id}_data.csv", f"{trip_id}_config.json"
+
+def get_data(repo, filename):
+    try:
+        contents = repo.get_contents(filename)
         csv_content = contents.decoded_content.decode("utf-8")
-        expected_columns = ['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu']
-        if not csv_content: return pd.DataFrame(columns=expected_columns)
         df = pd.read_csv(io.StringIO(csv_content))
+        # Konwersja kolumn
         if 'Start' in df.columns: df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns: df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
         if 'Koszt' not in df.columns: df['Koszt'] = 0.0
         if 'Typ_Kosztu' not in df.columns: df['Typ_Kosztu'] = 'Indywidualny'
         return df.fillna("")
     except Exception:
+        # Zwracamy pusty dataframe z odpowiednimi kolumnami
         return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu'])
 
-def get_config(repo):
+def get_config(repo, filename):
+    default_conf = {"trip_name": "Nowa Wyprawa", "start_date": "2026-06-01", "days": 7, "people": 1}
     try:
-        contents = repo.get_contents(NAZWA_PLIKU_CONFIG)
-        json_content = contents.decoded_content.decode("utf-8")
-        config = json.loads(json_content)
+        contents = repo.get_contents(filename)
+        config = json.loads(contents.decoded_content.decode("utf-8"))
         config['start_date'] = datetime.strptime(config['start_date'], "%Y-%m-%d").date()
-        # Fallback dla starego configu bez trip_name
-        if 'trip_name' not in config: config['trip_name'] = DEFAULT_CONFIG['trip_name']
+        if 'trip_name' not in config: config['trip_name'] = default_conf['trip_name']
         return config
     except Exception:
-        defaults = DEFAULT_CONFIG.copy()
-        defaults['start_date'] = datetime.strptime(defaults['start_date'], "%Y-%m-%d").date()
-        return defaults
+        default_conf['start_date'] = datetime.strptime(default_conf['start_date'], "%Y-%m-%d").date()
+        return default_conf
 
-def update_data(repo, df):
+def update_file(repo, filename, content_str, message="Update"):
     try:
-        contents = repo.get_contents(NAZWA_PLIKU_BAZY)
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
-        new_content = csv_buffer.getvalue()
-        repo.update_file(contents.path, "Update z aplikacji", new_content, contents.sha)
-        return True
-    except Exception as e:
-        st.error(f"Błąd zapisu danych: {e}")
-        return False
-
-def update_config(repo, new_config):
-    try:
-        save_config = new_config.copy()
-        save_config['start_date'] = save_config['start_date'].strftime("%Y-%m-%d")
-        json_str = json.dumps(save_config, indent=4)
         try:
-            contents = repo.get_contents(NAZWA_PLIKU_CONFIG)
-            repo.update_file(contents.path, "Update ustawień", json_str, contents.sha)
-        except Exception:
-            repo.create_file(NAZWA_PLIKU_CONFIG, "Init config", json_str)
+            contents = repo.get_contents(filename)
+            repo.update_file(contents.path, message, content_str, contents.sha)
+        except:
+            repo.create_file(filename, message, content_str)
         return True
     except Exception as e:
-        st.error(f"Błąd zapisu ustawień: {e}")
+        st.error(f"Błąd zapisu pliku {filename}: {e}")
         return False
 
-# --- POBRANIE DANYCH ---
+def delete_trip_files(repo, trip_id):
+    f_data, f_conf = get_trip_files(trip_id)
+    try:
+        c1 = repo.get_contents(f_data)
+        repo.delete_file(f_data, "Delete Trip Data", c1.sha)
+    except: pass
+    try:
+        c2 = repo.get_contents(f_conf)
+        repo.delete_file(f_conf, "Delete Trip Config", c2.sha)
+    except: pass
+
+# ==========================================
+# 🚀 INICJALIZACJA STANU APLIKACJI
+# ==========================================
 repo = init_github()
 if repo:
-    if 'db' not in st.session_state: st.session_state.db = get_data(repo)
-    # Refresh na wszelki wypadek
-    st.session_state.db = get_data(repo) 
+    # 1. Pobierz rejestr
+    registry = get_registry(repo)
+    current_id = registry.get("current", "default")
     
-    global_config = get_config(repo)
-    st.session_state.config_trip_name = global_config.get('trip_name', DEFAULT_CONFIG['trip_name'])
-    st.session_state.config_start_date = global_config['start_date']
-    st.session_state.config_days = global_config['days']
-    st.session_state.config_people = global_config['people']
+    # 2. Ustal nazwy plików dla aktualnej wyprawy
+    data_file, config_file = get_trip_files(current_id)
+    
+    # 3. Załaduj dane do session_state
+    # (Ładujemy tylko jeśli zmieniło się ID lub jeszcze nie ma danych)
+    if 'current_trip_id' not in st.session_state or st.session_state.current_trip_id != current_id:
+        st.session_state.current_trip_id = current_id
+        st.session_state.db = get_data(repo, data_file)
+        conf = get_config(repo, config_file)
+        st.session_state.config_trip_name = conf['trip_name']
+        st.session_state.config_start_date = conf['start_date']
+        st.session_state.config_days = conf['days']
+        st.session_state.config_people = conf['people']
+    elif 'db' not in st.session_state:
+         st.session_state.db = get_data(repo, data_file) # Fallback reload
 else: st.stop()
 
 # ==========================================
-# 🏷️ DIALOG USTAWIEŃ
+# 📂 DIALOG: MENADŻER ZAPISÓW
 # ==========================================
-@st.dialog("⚙️ Konfiguracja Wyjazdu")
-def settings_dialog():
-    st.write("Główne informacje")
-    # NOWE POLE: NAZWA WYPRAWY
-    new_name = st.text_input("Nazwa Wyprawy (tytuł strony):", value=st.session_state.config_trip_name)
+@st.dialog("📂 Menadżer Zapisów")
+def save_manager_dialog():
+    st.caption("Tutaj możesz przełączać się między różnymi wycieczkami lub tworzyć nowe.")
     
-    c1, c2 = st.columns(2)
-    with c1: new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
-    with c2: new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    # 1. Lista dostępnych
+    trips_dict = registry.get("trips", {})
+    trip_ids = list(trips_dict.keys())
+    trip_names = list(trips_dict.values())
+    
+    current_name = trips_dict.get(st.session_state.current_trip_id, "Nieznana")
+    st.info(f"Aktualnie edytujesz: **{current_name}**")
     
     st.divider()
-    st.write("💰 Rozliczenia")
-    new_people = st.number_input("Liczba uczestników:", min_value=1, value=st.session_state.config_people)
     
-    if st.button("Zapisz w chmurze", type="primary"):
-        with st.spinner("Aktualizuję konfigurację..."):
-            new_conf_dict = {
-                "trip_name": new_name,
-                "start_date": new_date, 
-                "days": new_days, 
-                "people": new_people
-            }
-            if update_config(repo, new_conf_dict):
-                st.session_state.config_trip_name = new_name
-                st.session_state.config_start_date = new_date
-                st.session_state.config_days = new_days
-                st.session_state.config_people = new_people
-                st.success("Zapisano!")
+    # 2. Przełączanie
+    st.markdown("#### 🔄 Przełącz wyprawę")
+    selected_name_switch = st.selectbox("Wybierz z listy:", trip_names, index=trip_names.index(current_name) if current_name in trip_names else 0)
+    
+    if st.button("Załaduj wybraną", type="primary", use_container_width=True):
+        # Znajdź ID po nazwie
+        found_id = [k for k, v in trips_dict.items() if v == selected_name_switch][0]
+        if found_id != st.session_state.current_trip_id:
+            registry['current'] = found_id
+            if update_registry(repo, registry):
+                st.session_state.current_trip_id = found_id
+                st.rerun()
+
+    st.divider()
+
+    # 3. Tworzenie nowej
+    st.markdown("#### ✨ Nowa Wyprawa")
+    with st.form("new_trip_form"):
+        new_trip_name = st.text_input("Nazwa nowej wyprawy (np. Alpy 2027)")
+        create_btn = st.form_submit_button("Utwórz pustą bazę")
+        
+        if create_btn and new_trip_name:
+            if new_trip_name in trip_names:
+                st.error("Taka nazwa już istnieje!")
+            else:
+                with st.spinner("Tworzę pliki..."):
+                    # Generuj ID
+                    new_id = str(uuid.uuid4())[:8]
+                    # Dodaj do rejestru
+                    registry['trips'][new_id] = new_trip_name
+                    registry['current'] = new_id # Od razu przełącz
+                    
+                    # Zapisz rejestr
+                    update_registry(repo, registry)
+                    
+                    # Utwórz domyślny config dla nowej bazy
+                    new_conf = {"trip_name": new_trip_name, "start_date": "2026-06-01", "days": 7, "people": 1}
+                    json_str = json.dumps(new_conf, indent=4)
+                    new_f_data, new_f_conf = get_trip_files(new_id)
+                    
+                    update_file(repo, new_f_conf, json_str, "Init Config")
+                    update_file(repo, new_f_data, "Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu\n", "Init Data")
+                    
+                    st.success("Utworzono! Przełączam...")
+                    st.rerun()
+
+    # 4. Usuwanie (Tylko jeśli to nie jest jedyna)
+    if len(trip_ids) > 1:
+        with st.expander("🗑️ Strefa Niebezpieczna (Usuwanie)"):
+            to_delete_name = st.selectbox("Wybierz wyprawę do usunięcia:", [n for n in trip_names if n != current_name])
+            if st.button(f"Usuń trwale: {to_delete_name}", type="secondary"):
+                del_id = [k for k, v in trips_dict.items() if v == to_delete_name][0]
+                
+                # Usuń z rejestru
+                del registry['trips'][del_id]
+                update_registry(repo, registry)
+                
+                # Usuń pliki
+                delete_trip_files(repo, del_id)
+                st.success("Usunięto.")
                 st.rerun()
 
 # ==========================================
-# 🖼️ HEADER (LOGOTYP + DYNAMICZNY TYTUŁ)
+# ⚙️ DIALOG KONFIGURACJI (DLA AKTUALNEJ)
+# ==========================================
+@st.dialog("⚙️ Konfiguracja Wyjazdu")
+def settings_dialog():
+    st.write("Edytujesz ustawienia dla: " + st.session_state.config_trip_name)
+    new_name = st.text_input("Nazwa Wyprawy (tytuł):", value=st.session_state.config_trip_name)
+    c1, c2 = st.columns(2)
+    with c1: new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
+    with c2: new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    st.divider()
+    new_people = st.number_input("Liczba uczestników:", min_value=1, value=st.session_state.config_people)
+    
+    if st.button("Zapisz zmiany", type="primary"):
+        with st.spinner("Zapisuję..."):
+            new_conf_dict = {
+                "trip_name": new_name, "start_date": new_date, "days": new_days, "people": new_people
+            }
+            # Zapisz też nazwę w rejestrze, żeby była aktualna na liście
+            registry['trips'][st.session_state.current_trip_id] = new_name
+            update_registry(repo, registry)
+            
+            # Zapisz config plikowy
+            f_data, f_conf = get_trip_files(st.session_state.current_trip_id)
+            save_config = new_conf_dict.copy()
+            save_config['start_date'] = save_config['start_date'].strftime("%Y-%m-%d")
+            update_file(repo, f_conf, json.dumps(save_config, indent=4))
+
+            st.session_state.config_trip_name = new_name
+            st.session_state.config_start_date = new_date
+            st.session_state.config_days = new_days
+            st.session_state.config_people = new_people
+            st.rerun()
+
+# ==========================================
+# 🖼️ HEADER
 # ==========================================
 col_title, col_settings = st.columns([6, 1]) 
-
 with col_title:
-    # 1. Logika Dynamicznego Tytułu
     full_title = st.session_state.config_trip_name
-    title_parts = full_title.rsplit(' ', 1) # Dzielimy po ostatniej spacji
-    
-    if len(title_parts) > 1:
-        # Jeśli są co najmniej 2 słowa (np. "Wyprawa 2026"), kolorujemy ostatnie
-        title_html = f"{title_parts[0]} <span style='color:{COLOR_ACCENT}'>{title_parts[1]}</span>"
-    else:
-        # Jeśli jedno słowo, wszystko na jasno
-        title_html = full_title
+    title_parts = full_title.rsplit(' ', 1)
+    title_html = f"{title_parts[0]} <span style='color:{COLOR_ACCENT}'>{title_parts[1]}</span>" if len(title_parts) > 1 else full_title
 
-    # 2. Ikony
     icon_github = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-bottom: 3px;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>'
     
-    # 3. Logotyp
     logo_base64 = image_to_base64("logo.png")
     if logo_base64:
         icon_logotype = f'<img src="data:image/png;base64,{logo_base64}" width="140" style="transform: scaleX(-1);">'
     else:
-        # Fallback SVG Auto
         icon_logotype = f'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="{COLOR_ACCENT}" stroke="{COLOR_TEXT}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12v4.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V16a1 1 0 0 0-1-1h-1Z"/><circle cx="6.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/><circle cx="16.5" cy="16.5" r="2.5" fill="{COLOR_ACCENT}" stroke="none"/></svg>'
 
-    # 4. Konstrukcja HTML ("Cegła po cegle")
     html = ""
     html += f"<div style='background-color: {COLOR_SEC}; padding: 2rem; border-radius: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: space-between;'>"
     html += "<div style='flex: 1;'>"
-    
-    # Używamy wygenerowanego title_html
     html += f"<h1 style='color: {COLOR_TEXT}; margin: 0; font-size: 2.8rem; line-height: 1.1; letter-spacing: -1px; text-transform: uppercase; font-weight: 700;'>{title_html}</h1>"
-    
     html += f"<p style='margin: 5px 0 0 0; font-size: 1.1rem; color: {COLOR_TEXT}; opacity: 0.9; font-weight: 400; letter-spacing: 3px; text-transform: uppercase;'>PLANNER WYJAZDOWY</p>"
     html += f"<div style='height: 4px; width: 60px; background-color: {COLOR_ACCENT}; margin: 20px 0 15px 0; border-radius: 2px;'></div>"
     html += f"<p style='margin: 0; font-size: 0.9rem; color: {COLOR_TEXT}; opacity: 0.7; font-family: monospace; display: flex; align-items: center; gap: 8px;'>{icon_github} Baza danych: GitHub Repository</p>"
     html += "</div>"
     html += f"<div style='flex: 0 0 auto; margin-left: 20px;'>{icon_logotype}</div>"
     html += "</div>"
-
     st.markdown(html, unsafe_allow_html=True)
 
 with col_settings:
     st.write("") 
-    if st.button("⚙️", use_container_width=True):
+    # DWA PRZYCISKI: MANAGER I USTAWIENIA
+    if st.button("📂", use_container_width=True, help="Menadżer Zapisów"):
+        save_manager_dialog()
+    
+    if st.button("⚙️", use_container_width=True, help="Ustawienia"):
         settings_dialog()
 
 # ==========================================
-# 📊 HELPERY DO WYKRESÓW
+# 📊 HELPERY
 # ==========================================
 def przygotuj_dane_do_siatki(df):
     grid_data = []
@@ -271,12 +388,8 @@ def przygotuj_dane_do_siatki(df):
         for i, godzina_bloku in enumerate(zakres_godzin):
             label = row['Tytuł'] if i == 0 else "" 
             grid_data.append({
-                'DataFull': godzina_bloku,
-                'Dzień': godzina_bloku.strftime('%d.%m'),
-                'Godzina': godzina_bloku.hour,
-                'Tytuł_Display': label,
-                'Tytuł_Full': row['Tytuł'],
-                'Kategoria': row['Kategoria']
+                'DataFull': godzina_bloku, 'Dzień': godzina_bloku.strftime('%d.%m'), 'Godzina': godzina_bloku.hour,
+                'Tytuł_Display': label, 'Tytuł_Full': row['Tytuł'], 'Kategoria': row['Kategoria']
             })
     return pd.DataFrame(grid_data)
 
@@ -286,25 +399,16 @@ def generuj_tlo_widoku(start_date, num_days):
         current_day = start_date + timedelta(days=d)
         for h in range(24):
             tlo_data.append({
-                'DataFull': current_day,
-                'Dzień': current_day.strftime('%d.%m'),
-                'Godzina': h,
-                'Tytuł_Display': '',
-                'Kategoria': 'Tło'
+                'DataFull': current_day, 'Dzień': current_day.strftime('%d.%m'), 'Godzina': h, 'Tytuł_Display': '', 'Kategoria': 'Tło'
             })
     return pd.DataFrame(tlo_data)
 
 # ==========================================
 # 📑 GŁÓWNE ZAKŁADKI
 # ==========================================
-tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs([
-    "📝 Edytor i Giełda", 
-    "📅 Kalendarz", 
-    "💸 Koszty Wspólne", 
-    "💰 Podsumowanie"
-])
+tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz", "💸 Koszty Wspólne", "💰 Podsumowanie"])
 
-# --- ZAKŁADKA 1: EDYTOR ---
+# --- TAB 1: EDYTOR ---
 with tab_edytor:
     col_a, col_b = st.columns([1, 2])
     with col_a:
@@ -325,7 +429,11 @@ with tab_edytor:
                     'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
                 }])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                if update_data(repo, updated_df): st.success(f"Dodano '{tytul}'!"); st.rerun()
+                csv_buffer = io.StringIO()
+                updated_df.to_csv(csv_buffer, index=False)
+                update_file(repo, data_file, csv_buffer.getvalue())
+                st.session_state.db = updated_df # Update local
+                st.success(f"Dodano '{tytul}'!"); st.rerun()
 
     with col_b:
         st.subheader("📦 Giełda pomysłów")
@@ -333,120 +441,76 @@ with tab_edytor:
                               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         do_pokazania = st.session_state.db[mask_niezaplanowane]
         if not do_pokazania.empty:
-            event = st.dataframe(
-                do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
-                use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
-            )
+            event = st.dataframe(do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True)
             if event.selection.rows:
                 if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
                     with st.spinner("Usuwam..."):
                         indeksy = do_pokazania.iloc[event.selection.rows].index
                         updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
-                        if update_data(repo, updated_df): st.rerun()
+                        csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.session_state.db = updated_df
+                        st.rerun()
         else: st.info("Brak elementów.")
 
-# --- ZAKŁADKA 2: KALENDARZ (HYBRYDOWY) ---
+# --- TAB 2: KALENDARZ (HYBRID) ---
 with tab_kalendarz:
     col_switch, _ = st.columns([1, 4])
-    with col_switch:
-        mobile_mode = st.toggle("📱 Widok Mobilny (Lista)", value=False)
-
+    with col_switch: mobile_mode = st.toggle("📱 Widok Mobilny (Lista)", value=False)
+    
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
-    
-    mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
-               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     df_events = st.session_state.db[mask_zap].copy()
-    
     if not df_events.empty:
         df_events['Start'] = pd.to_datetime(df_events['Start'])
         df_events = df_events.sort_values(by='Start')
 
-    # >> WIDOK MOBILNY
     if mobile_mode:
-        if df_events.empty:
-            st.info("Nic jeszcze nie zaplanowano.")
+        if df_events.empty: st.info("Nic jeszcze nie zaplanowano.")
         else:
             df_events['Date_Only'] = df_events['Start'].dt.date
-            unique_dates = sorted(df_events['Date_Only'].unique())
-
-            for day in unique_dates:
+            for day in sorted(df_events['Date_Only'].unique()):
                 day_map = {'Monday': 'Poniedziałek', 'Tuesday': 'Wtorek', 'Wednesday': 'Środa', 'Thursday': 'Czwartek', 'Friday': 'Piątek', 'Saturday': 'Sobota', 'Sunday': 'Niedziela'}
-                day_name = day.strftime('%A')
-                day_pl = day_map.get(day_name, day_name)
-                
+                day_name = day.strftime('%A'); day_pl = day_map.get(day_name, day_name)
                 st.markdown(f"#### 🗓️ {day.strftime('%d.%m')} • {day_pl}")
                 daily_items = df_events[df_events['Date_Only'] == day]
-                
                 for _, row in daily_items.iterrows():
-                    start_time = row['Start'].strftime('%H:%M')
-                    end_time = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%H:%M')
-                    duration = int(row['Czas (h)'])
-                    title = row['Tytuł']
-                    cat = row['Kategoria']
+                    start_time = row['Start'].strftime('%H:%M'); end_time = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%H:%M')
+                    duration = int(row['Czas (h)']); title = row['Tytuł']; cat = row['Kategoria']
                     try: cost_val = float(row['Koszt'])
                     except: cost_val = 0.0
+                    cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>" if cost_val > 0 else ""
                     
-                    cost_badge = ""
-                    if cost_val > 0:
-                        cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>"
-
-                    if cat == "Atrakcja":
-                        bg_color = COLOR_ACCENT; text_color = "#faf9dd"
-                    elif cat == "Trasa":
-                        bg_color = COLOR_SEC; text_color = "#ffffff"
-                    else:
-                        bg_color = "#444444"; text_color = "#dddddd"
+                    if cat == "Atrakcja": bg_color = COLOR_ACCENT; text_color = "#faf9dd"
+                    elif cat == "Trasa": bg_color = COLOR_SEC; text_color = "#ffffff"
+                    else: bg_color = "#444444"; text_color = "#dddddd"
 
                     card_html = ""
                     card_html += f"<div style='background-color: {bg_color}; color: {text_color}; padding: 15px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.15); border-left: 6px solid rgba(0,0,0,0.2);'>"
-                    card_html += f"<div style='font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px; display: flow-root;'>"
-                    card_html += f"<span>⏱️ {start_time} - {end_time} ({duration}h)</span>{cost_badge}</div>"
+                    card_html += f"<div style='font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px; display: flow-root;'><span>⏱️ {start_time} - {end_time} ({duration}h)</span>{cost_badge}</div>"
                     card_html += f"<div style='font-size: 1.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 4px;'>{title}</div>"
                     card_html += f"<div style='font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;'>{cat}</div>"
                     card_html += "</div>"
                     st.markdown(card_html, unsafe_allow_html=True)
-                st.write("") 
-
-    # >> WIDOK DESKTOP
+                st.write("")
     else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
-        
-        domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]
-        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
+        domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]; range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
         total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
-
         st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
-        
-        base = alt.Chart(background_df).encode(
-            x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
-                    axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)),
-            y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT))
-        )
+        base = alt.Chart(background_df).encode(x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)), y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT)))
         layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.2).encode(color=alt.value(COLOR_BG), tooltip=['Dzień', 'Godzina'])
-
         if not full_df.empty:
-            chart_data = alt.Chart(full_df).encode(
-                x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")),
-                y=alt.Y('Godzina:O'),
-                tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
-            )
-            layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(
-                color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
-            )
-            layer_text = chart_data.mark_text(
-                dx=-42, align='left', baseline='middle', fontSize=11, fontWeight='bold', limit=SZEROKOSC_KOLUMNY_DZIEN-10
-            ).encode(text=alt.Text('Tytuł_Display'), color=alt.value(COLOR_BG))
+            chart_data = alt.Chart(full_df).encode(x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")), y=alt.Y('Godzina:O'), tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień'])
+            layer_rects = chart_data.mark_rect(stroke=COLOR_BG, strokeWidth=1).encode(color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None))
+            layer_text = chart_data.mark_text(dx=-42, align='left', baseline='middle', fontSize=11, fontWeight='bold', limit=SZEROKOSC_KOLUMNY_DZIEN-10).encode(text=alt.Text('Tytuł_Display'), color=alt.value(COLOR_BG))
             final_chart = (layer_bg + layer_rects + layer_text).properties(height=600, width=total_width)
-        else:
-            final_chart = layer_bg.properties(height=600, width=total_width)
-
+        else: final_chart = layer_bg.properties(height=600, width=total_width)
         st.altair_chart(final_chart)
-        
+    
     st.divider()
-
-    # --- PRZYBORNIK ---
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
         st.subheader("📌 Przybornik")
@@ -455,9 +519,7 @@ with tab_kalendarz:
         if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
         if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
         if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
-
-        mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
-                     (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         niezaplanowane = st.session_state.db[mask_przyb]
         if not niezaplanowane.empty:
             filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
@@ -476,14 +538,15 @@ with tab_kalendarz:
                         st.session_state.db.at[idx, 'Start'] = start_dt
                         st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
                         st.session_state.db.at[idx, 'Zaplanowane'] = True
-                        if update_data(repo, st.session_state.db): st.success("Zapisano!"); st.rerun()
+                        csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.success("Zapisano!"); st.rerun()
             else: st.warning("Brak elementów.")
         else: st.success("Pusto!")
 
     with col_tools_right:
         st.subheader("🗑️ Zdejmowanie")
-        mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
-                   (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         zaplanowane = st.session_state.db[mask_zap]
         if not zaplanowane.empty:
             zaplanowane_sorted = zaplanowane.sort_values(by='Start')
@@ -496,10 +559,12 @@ with tab_kalendarz:
                         idx = st.session_state.db[st.session_state.db['Tytuł'] == orig_tytul].index[0]
                         st.session_state.db.at[idx, 'Zaplanowane'] = False
                         st.session_state.db.at[idx, 'Start'] = None
-                        if update_data(repo, st.session_state.db): st.rerun()
+                        csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.rerun()
         else: st.info("Kalendarz pusty.")
 
-# --- ZAKŁADKA 3: KOSZTY WSPÓLNE ---
+# --- TAB 3: WSPÓLNE ---
 with tab_wspolne:
     col_fixed, col_fuel = st.columns(2)
     with col_fixed:
@@ -510,13 +575,12 @@ with tab_wspolne:
             koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
             if st.form_submit_button("Dodaj do wspólnych"):
                 if nazwa and koszt_calosc > 0:
-                    nowy = pd.DataFrame([{
-                        'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 
-                        'Start': None, 'Koniec': None, 'Zaplanowane': False,
-                        'Koszt': float(koszt_calosc), 'Typ_Kosztu': 'Wspólny'
-                    }])
+                    nowy = pd.DataFrame([{'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 'Start': None, 'Koniec': None, 'Zaplanowane': False, 'Koszt': float(koszt_calosc), 'Typ_Kosztu': 'Wspólny'}])
                     updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                    if update_data(repo, updated_df): st.success(f"Dodano {nazwa}!"); st.rerun()
+                    csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                    update_file(repo, data_file, csv_buffer.getvalue())
+                    st.session_state.db = updated_df
+                    st.success(f"Dodano {nazwa}!"); st.rerun()
 
     with col_fuel:
         st.markdown("### ⛽ Kalkulator Trasy")
@@ -529,133 +593,82 @@ with tab_wspolne:
             st.markdown(f"**Szacowany koszt:** :red[{koszt_trasy:.2f} PLN]")
             if st.button("➕ Dodaj auto do rozliczenia"):
                 tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
-                nowy = pd.DataFrame([{
-                    'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 
-                    'Start': None, 'Koniec': None, 'Zaplanowane': False,
-                    'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'
-                }])
+                nowy = pd.DataFrame([{'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 'Start': None, 'Koniec': None, 'Zaplanowane': False, 'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'}])
                 updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                if update_data(repo, updated_df): st.success(f"Dodano {auto_nazwa}!"); st.rerun()
+                csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                update_file(repo, data_file, csv_buffer.getvalue())
+                st.session_state.db = updated_df
+                st.success(f"Dodano {auto_nazwa}!"); st.rerun()
 
     st.divider()
     st.markdown("### 📋 Lista dodanych kosztów wspólnych")
     mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
     df_wspolne = st.session_state.db[mask_wspolne]
     if not df_wspolne.empty:
-        event = st.dataframe(
-            df_wspolne[['Tytuł', 'Kategoria', 'Typ_Kosztu', 'Koszt']],
-            use_container_width=True, hide_index=True,
-            selection_mode="multi-row", on_select="rerun",
-            column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")}
-        )
+        event = st.dataframe(df_wspolne[['Tytuł', 'Kategoria', 'Typ_Kosztu', 'Koszt']], use_container_width=True, hide_index=True, selection_mode="multi-row", on_select="rerun", column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")})
         if event.selection.rows:
             if st.button("🗑️ Usuń wybrane koszty wspólne", type="primary"):
                  with st.spinner("Usuwam..."):
                     indeksy = df_wspolne.iloc[event.selection.rows].index
                     updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
-                    if update_data(repo, updated_df): st.rerun()
+                    csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                    update_file(repo, data_file, csv_buffer.getvalue())
+                    st.session_state.db = updated_df
+                    st.rerun()
     else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
 
-# --- ZAKŁADKA 4: PODSUMOWANIE ---
+# --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
     st.subheader("💰 Wielkie Podsumowanie Wyjazdu")
-    
-    mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
-             (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-    df_A = st.session_state.db[mask_A].copy()
-    df_A['Koszt'] = pd.to_numeric(df_A['Koszt'], errors='coerce').fillna(0)
-    sum_A = df_A['Koszt'].sum()
-
+    mask_A = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    df_A = st.session_state.db[mask_A].copy(); df_A['Koszt'] = pd.to_numeric(df_A['Koszt'], errors='coerce').fillna(0); sum_A = df_A['Koszt'].sum()
     mask_B = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
-    df_B = st.session_state.db[mask_B].copy()
-    df_B['Koszt'] = pd.to_numeric(df_B['Koszt'], errors='coerce').fillna(0)
-    sum_B_total = df_B['Koszt'].sum()
-
-    liczba_osob = st.session_state.config_people
-    sum_B_per_person = sum_B_total / liczba_osob
-    grand_total = sum_A + sum_B_per_person
+    df_B = st.session_state.db[mask_B].copy(); df_B['Koszt'] = pd.to_numeric(df_B['Koszt'], errors='coerce').fillna(0); sum_B_total = df_B['Koszt'].sum()
+    liczba_osob = st.session_state.config_people; sum_B_per_person = sum_B_total / liczba_osob; grand_total = sum_A + sum_B_per_person
 
     kpi1, kpi2, kpi3 = st.columns(3)
     with kpi1: st.metric(label="Twoje łączne koszty", value=f"{grand_total:.2f} PLN")
     with kpi2: st.metric(label="Tylko atrakcje (Kalendarz)", value=f"{sum_A:.2f} PLN", delta="Indywidualne")
-    with kpi3: st.metric(label="Zrzutka (Noclegi/Paliwo)", value=f"{sum_B_per_person:.2f} PLN", 
-                         delta=f"Całość: {sum_B_total:.0f} zł / {liczba_osob} os.", delta_color="off")
+    with kpi3: st.metric(label="Zrzutka (Noclegi/Paliwo)", value=f"{sum_B_per_person:.2f} PLN", delta=f"Całość: {sum_B_total:.0f} zł / {liczba_osob} os.", delta_color="off")
     st.divider()
 
     col_left, col_right = st.columns([1, 2])
     with col_left:
-        st.markdown("##### 🍰 Struktura kosztów (Twoja działka)")
+        st.markdown("##### 🍰 Struktura kosztów")
         pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
         if not df_B.empty:
             grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
-            for _, row in grouped_B.iterrows():
-                pie_data.append({'Kategoria': row['Kategoria'], 'Wartość': row['Koszt'] / liczba_osob})
-        
-        df_pie = pd.DataFrame(pie_data)
-        df_pie = df_pie[df_pie['Wartość'] > 0]
-
+            for _, row in grouped_B.iterrows(): pie_data.append({'Kategoria': row['Kategoria'], 'Wartość': row['Koszt'] / liczba_osob})
+        df_pie = pd.DataFrame(pie_data); df_pie = df_pie[df_pie['Wartość'] > 0]
         if not df_pie.empty:
-            total_pie = df_pie['Wartość'].sum()
-            df_pie['Procent'] = df_pie['Wartość'] / total_pie
+            df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
             pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, "gray"])
-            
             base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
-            pie = base_pie.mark_arc(innerRadius=50).encode(
-                color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
-                tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f'), alt.Tooltip('Procent', format='.1%')]
-            )
-            text = base_pie.mark_text(radius=120, size=14).encode(
-                text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"),
-                color=alt.value(COLOR_TEXT) 
-            )
+            pie = base_pie.mark_arc(innerRadius=50).encode(color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)), tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')])
+            text = base_pie.mark_text(radius=120, size=14).encode(text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT))
             st.altair_chart(pie + text, use_container_width=True)
         else: st.caption("Brak danych.")
-
-        st.markdown("##### 🧾 Twoje atrakcje")
-        if not df_A.empty:
-            tabela = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
-            st.dataframe(tabela, use_container_width=True, hide_index=True, height=200, 
-                         column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")})
-        else: st.info("Brak płatnych atrakcji.")
+        st.markdown("##### 🧾 Twoje atrakcje"); st.dataframe(df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False), use_container_width=True, hide_index=True, height=200, column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")}) if not df_A.empty else st.info("Brak płatnych atrakcji.")
 
     with col_right:
-        st.markdown("##### 📅 Kiedy portfel zaboli najbardziej?")
+        st.markdown("##### 📅 Wykres wydatków w czasie")
         if not df_A.empty:
             df_A['Data_Group'] = df_A['Start'].dt.date
             daily_costs = df_A.groupby('Data_Group')['Koszt'].sum().reset_index()
             daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
             daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
-            
-            base_bar = alt.Chart(daily_costs).encode(
-                x=alt.X('Etykieta:O', title='Dzień', sort=alt.EncodingSortField(field="Sort_Key", order="ascending"), 
-                        axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)),
-                y=alt.Y('Koszt:Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT))
-            )
-            bars = base_bar.mark_bar(color=COLOR_ACCENT, cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-                tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')]
-            )
-            text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5, size=12).encode(
-                text=alt.Text('Koszt:Q', format='.0f'),
-                color=alt.value(COLOR_TEXT)
-            )
+            base_bar = alt.Chart(daily_costs).encode(x=alt.X('Etykieta:O', title='Dzień', sort=alt.EncodingSortField(field="Sort_Key", order="ascending"), axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)), y=alt.Y('Koszt:Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)))
+            bars = base_bar.mark_bar(color=COLOR_ACCENT, cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')])
+            text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5, size=12).encode(text=alt.Text('Koszt:Q', format='.0f'), color=alt.value(COLOR_TEXT))
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
 
-# ==========================================
-# 📲 QR CODE W SIDEBARZE
-# ==========================================
+# --- QR CODE ---
 with st.sidebar:
     st.markdown("---")
     st.markdown(f"<h3 style='text-align: center; color: {COLOR_TEXT}; margin-bottom: 10px;'>📲 Udostępnij</h3>", unsafe_allow_html=True)
-    
-    # TUTAJ PODMIEŃ LINK NA SWÓJ (Z PRZEGLĄDARKI)
-    app_url = "https://twoja-apka.streamlit.app" 
-    
+    app_url = "https://twoja-apka.streamlit.app" # <--- ZMIEŃ TO NA SWÓJ LINK
     qr_color = COLOR_ACCENT.lstrip('#') 
-    qr_html = f"""
-    <div style="background-color: white; padding: 20px; border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 10px;">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;">
-    </div>
-    """
+    qr_html = f"""<div style="background-color: white; padding: 20px; border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 10px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;"></div>"""
     st.markdown(qr_html, unsafe_allow_html=True)
     st.caption("Zeskanuj telefonem, aby dołączyć do planowania!")
