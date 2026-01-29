@@ -19,9 +19,9 @@ COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 # ==========================================
 # ⚙️ KONFIGURACJA PLIKÓW
 # ==========================================
-REGISTRY_FILE = "registry.json"  # Plik trzymający listę wypraw
+REGISTRY_FILE = "registry.json"
 DEFAULT_TRIP_ID = "default"
-# Szablony nazw plików: {id}_data.csv / {id}_config.json
+SZEROKOSC_KOLUMNY_DZIEN = 100  # <--- DODAJ TĘ LINIJKĘ
 
 st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
