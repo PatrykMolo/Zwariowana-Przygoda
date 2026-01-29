@@ -15,13 +15,16 @@ COLOR_BG = "#1e2630"        # Gunmetal (Tło)
 COLOR_TEXT = "#faf9dd"      # Cream (Tekst)
 COLOR_ACCENT = "#d37759"    # Terracotta (Akcent: Przyciski, Atrakcje)
 COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
+# Dodatkowe kolory do wykresów:
+COLOR_EXTRA_1 = "#7c8c58"   # Olive Drab
+COLOR_EXTRA_2 = "#8c5e7c"   # Muted Plum
 
 # ==========================================
 # ⚙️ KONFIGURACJA PLIKÓW
 # ==========================================
 REGISTRY_FILE = "registry.json"
 DEFAULT_TRIP_ID = "default"
-SZEROKOSC_KOLUMNY_DZIEN = 100  # Naprawiony brak stałej
+SZEROKOSC_KOLUMNY_DZIEN = 100
 
 st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
@@ -598,14 +601,19 @@ with tab_podsumowanie:
         df_pie = pd.DataFrame(pie_data); df_pie = df_pie[df_pie['Wartość'] > 0]
         if not df_pie.empty:
             df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
-            pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, "gray"])
+            # NOWA PALETA KOLORÓW (6 KOLORÓW + SZARY)
+            pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_EXTRA_1, COLOR_EXTRA_2, COLOR_TEXT, "gray"])
+            
             base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
             pie = base_pie.mark_arc(innerRadius=50).encode(color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)), tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')])
+            
+            # NOWOŚĆ: TŁO DLA ETYKIET (CIEMNE KOŁA POD TEKSTEM)
+            text_bg = base_pie.mark_circle(radius=120, size=2500, color="#444444", opacity=0.8).encode(order=alt.Order("Kategoria"))
             text = base_pie.mark_text(radius=120, size=14).encode(text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT))
-            st.altair_chart(pie + text, use_container_width=True)
+            
+            st.altair_chart(pie + text_bg + text, use_container_width=True)
         else: st.caption("Brak danych.")
         
-        # --- FIX: POPRAWIONE WYŚWIETLANIE LISTY ATRAKCJI ---
         st.markdown("##### 🧾 Twoje atrakcje")
         if not df_A.empty:
             tabela_atrakcji = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
@@ -626,12 +634,3 @@ with tab_podsumowanie:
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
 
-# --- QR CODE ---
-with st.sidebar:
-    st.markdown("---")
-    st.markdown(f"<h3 style='text-align: center; color: {COLOR_TEXT}; margin-bottom: 10px;'>📲 Udostępnij</h3>", unsafe_allow_html=True)
-    app_url = "https://twoja-apka.streamlit.app" # <--- ZMIEŃ TO NA SWÓJ LINK
-    qr_color = COLOR_ACCENT.lstrip('#') 
-    qr_html = f"""<div style="background-color: white; padding: 20px; border-radius: 12px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 10px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={app_url}&color={qr_color}&bgcolor=ffffff" width="100%" style="border-radius: 4px;"></div>"""
-    st.markdown(qr_html, unsafe_allow_html=True)
-    st.caption("Zeskanuj telefonem, aby dołączyć do planowania!")
