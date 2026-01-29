@@ -454,62 +454,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
 
-    # ==========================
-    # 📥 EKSPORT DO .ICS
-    # ==========================
-    def create_ics_file(df):
-        # Format nagłówka iCalendar
-        ics_content = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            "PRODID:-//ZwariowanaPrzygoda//PL",
-            "CALSCALE:GREGORIAN",
-            "METHOD:PUBLISH"
-        ]
-        
-        # Filtrujemy tylko zaplanowane
-        mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
-        events = df[mask]
-
-        for _, row in events.iterrows():
-            if pd.isna(row['Start']) or row['Start'] == "": continue
-            
-            # Konwersja dat na format wymagany przez ICS: YYYYMMDDTHHMMSS
-            start_dt = row['Start'].strftime('%Y%m%dT%H%M%S')
-            end_dt = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%Y%m%dT%H%M%S')
-            
-            try: koszt_opis = f"Koszt: {float(row['Koszt']):.0f} PLN"
-            except: koszt_opis = ""
-            
-            opis = f"{row['Kategoria']} \\n{koszt_opis}" # \n to nowa linia w opisie
-            
-            ics_content.append("BEGIN:VEVENT")
-            ics_content.append(f"SUMMARY:{row['Tytuł']}")
-            ics_content.append(f"DTSTART:{start_dt}")
-            ics_content.append(f"DTEND:{end_dt}")
-            ics_content.append(f"DESCRIPTION:{opis}")
-            ics_content.append(f"STATUS:CONFIRMED")
-            ics_content.append("END:VEVENT")
-
-        ics_content.append("END:VCALENDAR")
-        return "\n".join(ics_content)
-
-    # Przycisk pobierania (pokazujemy go tylko jeśli są jakieś wydarzenia)
-    if not df_events.empty:
-        ics_data = create_ics_file(st.session_state.db)
-        # Generujemy nazwę pliku na podstawie nazwy wyprawy
-        safe_name = st.session_state.config_trip_name.replace(" ", "_").lower()
-        
-        st.download_button(
-            label="📅 Pobierz do Kalendarza (Google/Apple)",
-            data=ics_data,
-            file_name=f"{safe_name}.ics",
-            mime="text/calendar",
-            help="Pobierz plik i otwórz go, aby dodać wydarzenia do swojego kalendarza.",
-            use_container_width=True
-        )
-        st.divider()
-        
+   
     else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
@@ -579,6 +524,63 @@ with tab_kalendarz:
                         update_file(repo, data_file, csv_buffer.getvalue())
                         st.rerun()
         else: st.info("Kalendarz pusty.")
+
+ # ==========================
+    # 📥 EKSPORT DO .ICS
+    # ==========================
+    def create_ics_file(df):
+        # Format nagłówka iCalendar
+        ics_content = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//ZwariowanaPrzygoda//PL",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH"
+        ]
+        
+        # Filtrujemy tylko zaplanowane
+        mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
+        events = df[mask]
+
+        for _, row in events.iterrows():
+            if pd.isna(row['Start']) or row['Start'] == "": continue
+            
+            # Konwersja dat na format wymagany przez ICS: YYYYMMDDTHHMMSS
+            start_dt = row['Start'].strftime('%Y%m%dT%H%M%S')
+            end_dt = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%Y%m%dT%H%M%S')
+            
+            try: koszt_opis = f"Koszt: {float(row['Koszt']):.0f} PLN"
+            except: koszt_opis = ""
+            
+            opis = f"{row['Kategoria']} \\n{koszt_opis}" # \n to nowa linia w opisie
+            
+            ics_content.append("BEGIN:VEVENT")
+            ics_content.append(f"SUMMARY:{row['Tytuł']}")
+            ics_content.append(f"DTSTART:{start_dt}")
+            ics_content.append(f"DTEND:{end_dt}")
+            ics_content.append(f"DESCRIPTION:{opis}")
+            ics_content.append(f"STATUS:CONFIRMED")
+            ics_content.append("END:VEVENT")
+
+        ics_content.append("END:VCALENDAR")
+        return "\n".join(ics_content)
+
+    # Przycisk pobierania (pokazujemy go tylko jeśli są jakieś wydarzenia)
+    if not df_events.empty:
+        ics_data = create_ics_file(st.session_state.db)
+        # Generujemy nazwę pliku na podstawie nazwy wyprawy
+        safe_name = st.session_state.config_trip_name.replace(" ", "_").lower()
+        
+        st.download_button(
+            label="📅 Pobierz do Kalendarza (Google/Apple)",
+            data=ics_data,
+            file_name=f"{safe_name}.ics",
+            mime="text/calendar",
+            help="Pobierz plik i otwórz go, aby dodać wydarzenia do swojego kalendarza.",
+            use_container_width=True
+        )
+        st.divider()
+        
 
 # --- TAB 3: WSPÓLNE ---
 with tab_wspolne:
