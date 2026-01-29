@@ -601,17 +601,39 @@ with tab_podsumowanie:
         df_pie = pd.DataFrame(pie_data); df_pie = df_pie[df_pie['Wartość'] > 0]
         if not df_pie.empty:
             df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
-            # NOWA PALETA KOLORÓW (6 KOLORÓW + SZARY)
+            
+            # Paleta z nowymi kolorami
             pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_EXTRA_1, COLOR_EXTRA_2, COLOR_TEXT, "gray"])
             
-            base_pie = alt.Chart(df_pie).encode(theta=alt.Theta(field="Wartość", type="quantitative", stack=True))
-            pie = base_pie.mark_arc(innerRadius=50).encode(color=alt.Color(field="Kategoria", type="nominal", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)), tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')])
+            # Baza wykresu
+            base = alt.Chart(df_pie).encode(
+                theta=alt.Theta("Wartość", stack=True)
+            )
             
-            # NOWOŚĆ: TŁO DLA ETYKIET (CIEMNE KOŁA POD TEKSTEM)
-            text_bg = base_pie.mark_circle(radius=120, size=2500, color="#444444", opacity=0.8).encode(order=alt.Order("Kategoria"))
-            text = base_pie.mark_text(radius=120, size=14).encode(text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT))
+            # 1. Warstwa Wycinków (Donut)
+            pie = base.mark_arc(innerRadius=50).encode(
+                color=alt.Color("Kategoria", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
+                order=alt.Order("Kategoria"), # Ważne dla kolejności
+                tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
+            )
             
-            st.altair_chart(pie + text_bg + text, use_container_width=True)
+            # 2. Warstwa Tła Etykiet (Trick: Wielka kropka "●")
+            # Używamy mark_text z radius=120, żeby tło było w tym samym miejscu co liczby
+            labels_bg = base.mark_text(radius=120, size=45).encode(
+                text=alt.value("●"),       # Znak kropki jako tło
+                color=alt.value("#1e2630"), # Ciemne tło (kolor tła strony dla "wycięcia" lub szary)
+                opacity=alt.value(0.6),    # Lekka przezroczystość
+                order=alt.Order("Kategoria")
+            )
+            
+            # 3. Warstwa Etykiet (Właściwe procenty)
+            labels_text = base.mark_text(radius=120, size=14, fontWeight="bold").encode(
+                text=alt.Text("Procent", format=".0%"),
+                order=alt.Order("Kategoria"),
+                color=alt.value(COLOR_TEXT) 
+            )
+            
+            st.altair_chart(pie + labels_bg + labels_text, use_container_width=True)
         else: st.caption("Brak danych.")
         
         st.markdown("##### 🧾 Twoje atrakcje")
