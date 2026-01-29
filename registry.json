@@ -1,6 +1,7 @@
 {
-    "current": "default",
+    "current": "506e55ca",
     "trips": {
-        "default": "Moja Pierwsza Wyprawa"
+        "default": "Moja Pierwsza Wyprawa",
+        "506e55ca": "Test"
     }
 }
