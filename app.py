@@ -587,8 +587,8 @@ with tab_podsumowanie:
 
     kpi1, kpi2, kpi3 = st.columns(3)
     with kpi1: st.metric(label="Twoje łączne koszty", value=f"{grand_total:.2f} PLN")
-    with kpi2: st.metric(label="Tylko atrakcje (Kalendarz)", value=f"{sum_A:.2f} PLN", delta="Indywidualne")
-    with kpi3: st.metric(label="Zrzutka (Noclegi/Paliwo)", value=f"{sum_B_per_person:.2f} PLN", delta=f"Całość: {sum_B_total:.0f} zł / {liczba_osob} os.", delta_color="off")
+    with kpi2: st.metric(label="Koszty aktywności", value=f"{sum_A:.2f} PLN", delta="Indywidualne")
+    with kpi3: st.metric(label="Koszty Bazowe", value=f"{sum_B_per_person:.2f} PLN", delta=f"Całość: {sum_B_total:.0f} zł / {liczba_osob} os.", delta_color="off")
     st.divider()
 
     col_left, col_right = st.columns([1, 2])
