@@ -21,7 +21,7 @@ COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 # ==========================================
 REGISTRY_FILE = "registry.json"
 DEFAULT_TRIP_ID = "default"
-SZEROKOSC_KOLUMNY_DZIEN = 100  # <--- DODAJ TĘ LINIJKĘ
+SZEROKOSC_KOLUMNY_DZIEN = 100
 
 st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
@@ -68,11 +68,6 @@ st.markdown(
         color: {COLOR_ACCENT} !important;
         border-bottom-color: {COLOR_ACCENT} !important;
     }}
-    
-    /* Style dla Managera Zapisów */
-    .trip-card {{
-        padding: 10px; border-radius: 8px; border: 1px solid #444; margin-bottom: 5px;
-    }}
     </style>
     """,
     unsafe_allow_html=True
@@ -101,35 +96,24 @@ def image_to_base64(image_path):
 
 # --- OBSŁUGA REJESTRU WYPRAW ---
 def get_registry(repo):
-    """Pobiera listę wypraw. Jeśli nie istnieje, tworzy nową (z migracją starej bazy)."""
     try:
         contents = repo.get_contents(REGISTRY_FILE)
         return json.loads(contents.decoded_content.decode("utf-8"))
     except Exception:
-        # PLIKU REJESTRU NIE MA -> ROBIMY MIGRACJĘ LUB INICJALIZACJĘ
-        # Sprawdzamy czy istnieje stary plik data.csv
+        # MIGRACJA
         try:
             old_data = repo.get_contents("data.csv")
-            # Mamy stary plik! Przemianujmy go na format nowego systemu
-            repo.update_file("default_data.csv", "Migracja na system Multi-Save", old_data.decoded_content, old_data.sha)
-            repo.delete_file("data.csv", "Cleanup po migracji", old_data.sha)
-            
-            # To samo dla configu
+            repo.update_file("default_data.csv", "Migracja", old_data.decoded_content, old_data.sha)
+            repo.delete_file("data.csv", "Cleanup", old_data.sha)
             try:
                 old_conf = repo.get_contents("config.json")
-                repo.update_file("default_config.json", "Migracja configu", old_conf.decoded_content, old_conf.sha)
+                repo.update_file("default_config.json", "Migracja", old_conf.decoded_content, old_conf.sha)
                 repo.delete_file("config.json", "Cleanup", old_conf.sha)
-            except: pass # Brak configu to nie problem
-            
-            st.toast("Dokonano migracji starej bazy do nowego systemu!", icon="📦")
-        except:
-            pass # Brak starej bazy, zaczynamy na czysto
+            except: pass
+            st.toast("Dokonano migracji bazy!", icon="📦")
+        except: pass
 
-        # Tworzymy nowy rejestr
-        new_registry = {
-            "current": "default",
-            "trips": {"default": "Moja Pierwsza Wyprawa"}
-        }
+        new_registry = {"current": "default", "trips": {"default": "Moja Pierwsza Wyprawa"}}
         repo.create_file(REGISTRY_FILE, "Init Registry", json.dumps(new_registry, indent=4))
         return new_registry
 
@@ -142,23 +126,20 @@ def update_registry(repo, registry_data):
         st.error(f"Błąd zapisu rejestru: {e}")
         return False
 
-# --- POBIERANIE DANYCH KONKRETNEJ WYPRAWY ---
+# --- POBIERANIE DANYCH ---
 def get_trip_files(trip_id):
     return f"{trip_id}_data.csv", f"{trip_id}_config.json"
 
 def get_data(repo, filename):
     try:
         contents = repo.get_contents(filename)
-        csv_content = contents.decoded_content.decode("utf-8")
-        df = pd.read_csv(io.StringIO(csv_content))
-        # Konwersja kolumn
+        df = pd.read_csv(io.StringIO(contents.decoded_content.decode("utf-8")))
         if 'Start' in df.columns: df['Start'] = pd.to_datetime(df['Start'], errors='coerce')
         if 'Koniec' in df.columns: df['Koniec'] = pd.to_datetime(df['Koniec'], errors='coerce')
         if 'Koszt' not in df.columns: df['Koszt'] = 0.0
         if 'Typ_Kosztu' not in df.columns: df['Typ_Kosztu'] = 'Indywidualny'
         return df.fillna("")
     except Exception:
-        # Zwracamy pusty dataframe z odpowiednimi kolumnami
         return pd.DataFrame(columns=['Tytuł', 'Kategoria', 'Czas (h)', 'Start', 'Koniec', 'Zaplanowane', 'Koszt', 'Typ_Kosztu'])
 
 def get_config(repo, filename):
@@ -187,30 +168,34 @@ def update_file(repo, filename, content_str, message="Update"):
 
 def delete_trip_files(repo, trip_id):
     f_data, f_conf = get_trip_files(trip_id)
-    try:
-        c1 = repo.get_contents(f_data)
-        repo.delete_file(f_data, "Delete Trip Data", c1.sha)
+    try: repo.delete_file(f_data, "Delete Data", repo.get_contents(f_data).sha)
     except: pass
-    try:
-        c2 = repo.get_contents(f_conf)
-        repo.delete_file(f_conf, "Delete Trip Config", c2.sha)
+    try: repo.delete_file(f_conf, "Delete Config", repo.get_contents(f_conf).sha)
     except: pass
 
 # ==========================================
-# 🚀 INICJALIZACJA STANU APLIKACJI
+# 🚀 INICJALIZACJA (NAPRAWIONA LOGIKA)
 # ==========================================
 repo = init_github()
 if repo:
-    # 1. Pobierz rejestr
+    # 1. Pobierz rejestr z chmury
     registry = get_registry(repo)
-    current_id = registry.get("current", "default")
+    remote_current_id = registry.get("current", "default")
     
-    # 2. Ustal nazwy plików dla aktualnej wyprawy
+    # 2. Ustal aktualne ID (Priorytet dla lokalnego wyboru przy przełączaniu)
+    if 'manual_switch_flag' in st.session_state and st.session_state.manual_switch_flag:
+        # Użytkownik właśnie przełączył - ufamy sesji, ignorujemy GitHuba na jeden cykl
+        current_id = st.session_state.current_trip_id
+        # Zdejmujemy flagę, żeby przy kolejnym odświeżeniu już zsynchronizował się z GH
+        del st.session_state.manual_switch_flag 
+    else:
+        # Normalny tryb - GitHub decyduje (synchronizacja między urządzeniami)
+        current_id = remote_current_id
+
+    # 3. Załaduj pliki, jeśli zmieniło się ID lub brakuje danych
     data_file, config_file = get_trip_files(current_id)
     
-    # 3. Załaduj dane do session_state
-    # (Ładujemy tylko jeśli zmieniło się ID lub jeszcze nie ma danych)
-    if 'current_trip_id' not in st.session_state or st.session_state.current_trip_id != current_id:
+    if 'current_trip_id' not in st.session_state or st.session_state.current_trip_id != current_id or 'db' not in st.session_state:
         st.session_state.current_trip_id = current_id
         st.session_state.db = get_data(repo, data_file)
         conf = get_config(repo, config_file)
@@ -218,116 +203,116 @@ if repo:
         st.session_state.config_start_date = conf['start_date']
         st.session_state.config_days = conf['days']
         st.session_state.config_people = conf['people']
-    elif 'db' not in st.session_state:
-         st.session_state.db = get_data(repo, data_file) # Fallback reload
+
 else: st.stop()
 
 # ==========================================
-# 📂 DIALOG: MENADŻER ZAPISÓW
+# 📂 DIALOG: MENADŻER ZAPISÓW (NAPRAWIONY)
 # ==========================================
 @st.dialog("📂 Menadżer Zapisów")
 def save_manager_dialog():
-    st.caption("Tutaj możesz przełączać się między różnymi wycieczkami lub tworzyć nowe.")
-    
-    # 1. Lista dostępnych
+    st.caption("Tutaj możesz przełączać się między różnymi wycieczkami.")
     trips_dict = registry.get("trips", {})
-    trip_ids = list(trips_dict.keys())
     trip_names = list(trips_dict.values())
-    
     current_name = trips_dict.get(st.session_state.current_trip_id, "Nieznana")
-    st.info(f"Aktualnie edytujesz: **{current_name}**")
     
+    st.info(f"Aktualnie edytujesz: **{current_name}**")
     st.divider()
     
-    # 2. Przełączanie
+    # 1. PRZEŁĄCZANIE (NAPRAWIONE)
     st.markdown("#### 🔄 Przełącz wyprawę")
-    selected_name_switch = st.selectbox("Wybierz z listy:", trip_names, index=trip_names.index(current_name) if current_name in trip_names else 0)
+    # Znajdź index aktualnej nazwy, żeby selectbox był dobrze ustawiony
+    try:
+        curr_index = trip_names.index(current_name)
+    except ValueError:
+        curr_index = 0
+        
+    selected_name_switch = st.selectbox("Wybierz z listy:", trip_names, index=curr_index)
     
     if st.button("Załaduj wybraną", type="primary", use_container_width=True):
         # Znajdź ID po nazwie
         found_id = [k for k, v in trips_dict.items() if v == selected_name_switch][0]
+        
         if found_id != st.session_state.current_trip_id:
-            registry['current'] = found_id
-            if update_registry(repo, registry):
+            with st.spinner("Przełączam bazę danych..."):
+                # A. Update GitHub
+                registry['current'] = found_id
+                update_registry(repo, registry)
+                
+                # B. Update Local State & Flag
                 st.session_state.current_trip_id = found_id
+                st.session_state.manual_switch_flag = True # <--- FLAGA: "Ufaj mi, nie GitHubowi"
+                
+                # C. Wymuś przeładowanie danych (czyścimy stare)
+                if 'db' in st.session_state: del st.session_state.db
+                
                 st.rerun()
 
     st.divider()
 
-    # 3. Tworzenie nowej
+    # 2. TWORZENIE
     st.markdown("#### ✨ Nowa Wyprawa")
     with st.form("new_trip_form"):
         new_trip_name = st.text_input("Nazwa nowej wyprawy (np. Alpy 2027)")
-        create_btn = st.form_submit_button("Utwórz pustą bazę")
-        
-        if create_btn and new_trip_name:
+        if st.form_submit_button("Utwórz pustą bazę"):
             if new_trip_name in trip_names:
                 st.error("Taka nazwa już istnieje!")
             else:
                 with st.spinner("Tworzę pliki..."):
-                    # Generuj ID
                     new_id = str(uuid.uuid4())[:8]
-                    # Dodaj do rejestru
                     registry['trips'][new_id] = new_trip_name
-                    registry['current'] = new_id # Od razu przełącz
-                    
-                    # Zapisz rejestr
+                    registry['current'] = new_id
                     update_registry(repo, registry)
                     
-                    # Utwórz domyślny config dla nowej bazy
+                    # Init plików
                     new_conf = {"trip_name": new_trip_name, "start_date": "2026-06-01", "days": 7, "people": 1}
-                    json_str = json.dumps(new_conf, indent=4)
                     new_f_data, new_f_conf = get_trip_files(new_id)
-                    
-                    update_file(repo, new_f_conf, json_str, "Init Config")
+                    update_file(repo, new_f_conf, json.dumps(new_conf, indent=4), "Init Config")
                     update_file(repo, new_f_data, "Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu\n", "Init Data")
                     
-                    st.success("Utworzono! Przełączam...")
+                    # Ustawienia lokalne po utworzeniu
+                    st.session_state.current_trip_id = new_id
+                    st.session_state.manual_switch_flag = True
+                    if 'db' in st.session_state: del st.session_state.db
                     st.rerun()
 
-    # 4. Usuwanie (Tylko jeśli to nie jest jedyna)
-    if len(trip_ids) > 1:
-        with st.expander("🗑️ Strefa Niebezpieczna (Usuwanie)"):
-            to_delete_name = st.selectbox("Wybierz wyprawę do usunięcia:", [n for n in trip_names if n != current_name])
-            if st.button(f"Usuń trwale: {to_delete_name}", type="secondary"):
-                del_id = [k for k, v in trips_dict.items() if v == to_delete_name][0]
-                
-                # Usuń z rejestru
+    # 3. USUWANIE
+    if len(trips_dict) > 1:
+        with st.expander("🗑️ Usuwanie"):
+            to_del = st.selectbox("Wybierz do usunięcia:", [n for n in trip_names if n != current_name])
+            if st.button(f"Usuń trwale: {to_del}"):
+                del_id = [k for k, v in trips_dict.items() if v == to_del][0]
                 del registry['trips'][del_id]
                 update_registry(repo, registry)
-                
-                # Usuń pliki
                 delete_trip_files(repo, del_id)
                 st.success("Usunięto.")
                 st.rerun()
 
 # ==========================================
-# ⚙️ DIALOG KONFIGURACJI (DLA AKTUALNEJ)
+# ⚙️ DIALOG KONFIGURACJI
 # ==========================================
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
 def settings_dialog():
-    st.write("Edytujesz ustawienia dla: " + st.session_state.config_trip_name)
-    new_name = st.text_input("Nazwa Wyprawy (tytuł):", value=st.session_state.config_trip_name)
+    st.write("Edytujesz: " + st.session_state.config_trip_name)
+    new_name = st.text_input("Nazwa Wyprawy:", value=st.session_state.config_trip_name)
     c1, c2 = st.columns(2)
-    with c1: new_date = st.date_input("Data początkowa:", value=st.session_state.config_start_date)
-    with c2: new_days = st.number_input("Długość (dni):", min_value=1, max_value=60, value=st.session_state.config_days)
+    with c1: new_date = st.date_input("Start:", value=st.session_state.config_start_date)
+    with c2: new_days = st.number_input("Dni:", min_value=1, max_value=60, value=st.session_state.config_days)
     st.divider()
-    new_people = st.number_input("Liczba uczestników:", min_value=1, value=st.session_state.config_people)
+    new_people = st.number_input("Uczestnicy:", min_value=1, value=st.session_state.config_people)
     
     if st.button("Zapisz zmiany", type="primary"):
         with st.spinner("Zapisuję..."):
-            new_conf_dict = {
-                "trip_name": new_name, "start_date": new_date, "days": new_days, "people": new_people
-            }
-            # Zapisz też nazwę w rejestrze, żeby była aktualna na liście
+            new_conf = {"trip_name": new_name, "start_date": new_date, "days": new_days, "people": new_people}
+            
+            # Update rejestru (jeśli zmieniła się nazwa)
             registry['trips'][st.session_state.current_trip_id] = new_name
             update_registry(repo, registry)
             
-            # Zapisz config plikowy
-            f_data, f_conf = get_trip_files(st.session_state.current_trip_id)
-            save_config = new_conf_dict.copy()
-            save_config['start_date'] = save_config['start_date'].strftime("%Y-%m-%d")
-            update_file(repo, f_conf, json.dumps(save_config, indent=4))
+            # Update configu
+            _, f_conf = get_trip_files(st.session_state.current_trip_id)
+            save_c = new_conf.copy(); save_c['start_date'] = save_c['start_date'].strftime("%Y-%m-%d")
+            update_file(repo, f_conf, json.dumps(save_c, indent=4))
 
             st.session_state.config_trip_name = new_name
             st.session_state.config_start_date = new_date
@@ -366,10 +351,8 @@ with col_title:
 
 with col_settings:
     st.write("") 
-    # DWA PRZYCISKI: MANAGER I USTAWIENIA
     if st.button("📂", use_container_width=True, help="Menadżer Zapisów"):
         save_manager_dialog()
-    
     if st.button("⚙️", use_container_width=True, help="Ustawienia"):
         settings_dialog()
 
@@ -432,7 +415,7 @@ with tab_edytor:
                 csv_buffer = io.StringIO()
                 updated_df.to_csv(csv_buffer, index=False)
                 update_file(repo, data_file, csv_buffer.getvalue())
-                st.session_state.db = updated_df # Update local
+                st.session_state.db = updated_df
                 st.success(f"Dodano '{tytul}'!"); st.rerun()
 
     with col_b:
