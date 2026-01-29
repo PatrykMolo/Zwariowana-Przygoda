@@ -593,7 +593,7 @@ with tab_podsumowanie:
 
     col_left, col_right = st.columns([1, 2])
     with col_left:
-        st.markdown("####Struktura kosztów")
+        st.markdown("#### Struktura kosztów")
         pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
         if not df_B.empty:
             grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
