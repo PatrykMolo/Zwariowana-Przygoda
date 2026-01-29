@@ -21,7 +21,7 @@ COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 # ==========================================
 REGISTRY_FILE = "registry.json"
 DEFAULT_TRIP_ID = "default"
-SZEROKOSC_KOLUMNY_DZIEN = 100
+SZEROKOSC_KOLUMNY_DZIEN = 100  # Naprawiony brak stałej
 
 st.set_page_config(page_title="Planer Wycieczki", layout="wide")
 
@@ -174,25 +174,22 @@ def delete_trip_files(repo, trip_id):
     except: pass
 
 # ==========================================
-# 🚀 INICJALIZACJA (NAPRAWIONA LOGIKA)
+# 🚀 INICJALIZACJA
 # ==========================================
 repo = init_github()
 if repo:
-    # 1. Pobierz rejestr z chmury
+    # 1. Pobierz rejestr
     registry = get_registry(repo)
     remote_current_id = registry.get("current", "default")
     
-    # 2. Ustal aktualne ID (Priorytet dla lokalnego wyboru przy przełączaniu)
+    # 2. Logika manualnego przełączenia (Flaga)
     if 'manual_switch_flag' in st.session_state and st.session_state.manual_switch_flag:
-        # Użytkownik właśnie przełączył - ufamy sesji, ignorujemy GitHuba na jeden cykl
         current_id = st.session_state.current_trip_id
-        # Zdejmujemy flagę, żeby przy kolejnym odświeżeniu już zsynchronizował się z GH
         del st.session_state.manual_switch_flag 
     else:
-        # Normalny tryb - GitHub decyduje (synchronizacja między urządzeniami)
         current_id = remote_current_id
 
-    # 3. Załaduj pliki, jeśli zmieniło się ID lub brakuje danych
+    # 3. Pobierz pliki
     data_file, config_file = get_trip_files(current_id)
     
     if 'current_trip_id' not in st.session_state or st.session_state.current_trip_id != current_id or 'db' not in st.session_state:
@@ -203,11 +200,10 @@ if repo:
         st.session_state.config_start_date = conf['start_date']
         st.session_state.config_days = conf['days']
         st.session_state.config_people = conf['people']
-
 else: st.stop()
 
 # ==========================================
-# 📂 DIALOG: MENADŻER ZAPISÓW (NAPRAWIONY)
+# 📂 DIALOG: MENADŻER ZAPISÓW
 # ==========================================
 @st.dialog("📂 Menadżer Zapisów")
 def save_manager_dialog():
@@ -219,44 +215,30 @@ def save_manager_dialog():
     st.info(f"Aktualnie edytujesz: **{current_name}**")
     st.divider()
     
-    # 1. PRZEŁĄCZANIE (NAPRAWIONE)
+    # 1. PRZEŁĄCZANIE
     st.markdown("#### 🔄 Przełącz wyprawę")
-    # Znajdź index aktualnej nazwy, żeby selectbox był dobrze ustawiony
-    try:
-        curr_index = trip_names.index(current_name)
-    except ValueError:
-        curr_index = 0
-        
+    try: curr_index = trip_names.index(current_name)
+    except ValueError: curr_index = 0
     selected_name_switch = st.selectbox("Wybierz z listy:", trip_names, index=curr_index)
     
     if st.button("Załaduj wybraną", type="primary", use_container_width=True):
-        # Znajdź ID po nazwie
         found_id = [k for k, v in trips_dict.items() if v == selected_name_switch][0]
-        
         if found_id != st.session_state.current_trip_id:
             with st.spinner("Przełączam bazę danych..."):
-                # A. Update GitHub
                 registry['current'] = found_id
                 update_registry(repo, registry)
-                
-                # B. Update Local State & Flag
                 st.session_state.current_trip_id = found_id
-                st.session_state.manual_switch_flag = True # <--- FLAGA: "Ufaj mi, nie GitHubowi"
-                
-                # C. Wymuś przeładowanie danych (czyścimy stare)
+                st.session_state.manual_switch_flag = True
                 if 'db' in st.session_state: del st.session_state.db
-                
                 st.rerun()
 
     st.divider()
-
     # 2. TWORZENIE
     st.markdown("#### ✨ Nowa Wyprawa")
     with st.form("new_trip_form"):
         new_trip_name = st.text_input("Nazwa nowej wyprawy (np. Alpy 2027)")
         if st.form_submit_button("Utwórz pustą bazę"):
-            if new_trip_name in trip_names:
-                st.error("Taka nazwa już istnieje!")
+            if new_trip_name in trip_names: st.error("Taka nazwa już istnieje!")
             else:
                 with st.spinner("Tworzę pliki..."):
                     new_id = str(uuid.uuid4())[:8]
@@ -264,18 +246,15 @@ def save_manager_dialog():
                     registry['current'] = new_id
                     update_registry(repo, registry)
                     
-                    # Init plików
                     new_conf = {"trip_name": new_trip_name, "start_date": "2026-06-01", "days": 7, "people": 1}
                     new_f_data, new_f_conf = get_trip_files(new_id)
                     update_file(repo, new_f_conf, json.dumps(new_conf, indent=4), "Init Config")
                     update_file(repo, new_f_data, "Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu\n", "Init Data")
                     
-                    # Ustawienia lokalne po utworzeniu
                     st.session_state.current_trip_id = new_id
                     st.session_state.manual_switch_flag = True
                     if 'db' in st.session_state: del st.session_state.db
                     st.rerun()
-
     # 3. USUWANIE
     if len(trips_dict) > 1:
         with st.expander("🗑️ Usuwanie"):
@@ -285,8 +264,7 @@ def save_manager_dialog():
                 del registry['trips'][del_id]
                 update_registry(repo, registry)
                 delete_trip_files(repo, del_id)
-                st.success("Usunięto.")
-                st.rerun()
+                st.success("Usunięto."); st.rerun()
 
 # ==========================================
 # ⚙️ DIALOG KONFIGURACJI
@@ -304,16 +282,11 @@ def settings_dialog():
     if st.button("Zapisz zmiany", type="primary"):
         with st.spinner("Zapisuję..."):
             new_conf = {"trip_name": new_name, "start_date": new_date, "days": new_days, "people": new_people}
-            
-            # Update rejestru (jeśli zmieniła się nazwa)
             registry['trips'][st.session_state.current_trip_id] = new_name
             update_registry(repo, registry)
-            
-            # Update configu
             _, f_conf = get_trip_files(st.session_state.current_trip_id)
             save_c = new_conf.copy(); save_c['start_date'] = save_c['start_date'].strftime("%Y-%m-%d")
             update_file(repo, f_conf, json.dumps(save_c, indent=4))
-
             st.session_state.config_trip_name = new_name
             st.session_state.config_start_date = new_date
             st.session_state.config_days = new_days
@@ -631,7 +604,14 @@ with tab_podsumowanie:
             text = base_pie.mark_text(radius=120, size=14).encode(text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT))
             st.altair_chart(pie + text, use_container_width=True)
         else: st.caption("Brak danych.")
-        st.markdown("##### 🧾 Twoje atrakcje"); st.dataframe(df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False), use_container_width=True, hide_index=True, height=200, column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")}) if not df_A.empty else st.info("Brak płatnych atrakcji.")
+        
+        # --- FIX: POPRAWIONE WYŚWIETLANIE LISTY ATRAKCJI ---
+        st.markdown("##### 🧾 Twoje atrakcje")
+        if not df_A.empty:
+            tabela_atrakcji = df_A[df_A['Koszt'] > 0][['Tytuł', 'Koszt']].sort_values(by='Koszt', ascending=False)
+            st.dataframe(tabela_atrakcji, use_container_width=True, hide_index=True, height=200, column_config={"Koszt": st.column_config.NumberColumn(format="%.2f zł")})
+        else: 
+            st.info("Brak płatnych atrakcji.")
 
     with col_right:
         st.markdown("##### 📅 Wykres wydatków w czasie")
