@@ -619,7 +619,7 @@ with tab_podsumowanie:
             
             # 2. Warstwa Tła Etykiet (Trick: Wielka kropka "●")
             # Używamy mark_text z radius=120, żeby tło było w tym samym miejscu co liczby
-            labels_bg = base.mark_text(radius=120, size=45).encode(
+            labels_bg = base.mark_text(radius=120, size=60).encode(
                 text=alt.value("●"),       # Znak kropki jako tło
                 color=alt.value("#1e2630"), # Ciemne tło (kolor tła strony dla "wycięcia" lub szary)
                 opacity=alt.value(0.6),    # Lekka przezroczystość
