@@ -529,12 +529,17 @@ with tab_edytor:
 
 # --- TAB 2: KALENDARZ (HYBRID) ---
 with tab_kalendarz:
+    # GÓRNA BELKA (TOGGLE + PRZYCISK ODPINANIA)
     col_switch, col_gap, col_btn = st.columns([2, 5, 2])
-    with col_switch: mobile_mode = st.toggle("📱 Widok Mobilny", value=False)
+    
+    with col_switch:
+        mobile_mode = st.toggle("📱 Widok Mobilny", value=False)
+    
     with col_btn:
         if st.button("🗑️ Odepnij", use_container_width=True):
             unpin_dialog()
             
+    # LOGIKA KALENDARZA
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
     mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
@@ -543,6 +548,7 @@ with tab_kalendarz:
         df_events['Start'] = pd.to_datetime(df_events['Start'])
         df_events = df_events.sort_values(by='Start')
         
+    # --- EKSPORT ICS ---
     def create_ics_file(df):
         ics_content = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ZwariowanaPrzygoda//PL", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
         mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
@@ -570,6 +576,7 @@ with tab_kalendarz:
         st.download_button("📅 Pobierz do Kalendarza", data=ics_data, file_name=f"{safe_name}.ics", mime="text/calendar", use_container_width=True)
         st.divider()
 
+    # --- WIDOK MOBILNY (LISTA) ---
     if mobile_mode:
         if df_events.empty: st.info("Nic jeszcze nie zaplanowano.")
         else:
@@ -601,19 +608,21 @@ with tab_kalendarz:
                     card_html += "</div>"
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
-else:
+    
+    # --- WIDOK DESKTOPOWY (ALTAIR) ---
+    else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
         
+        # Definicja kolorów dla wykresu (Tło jest teraz KREMOWE - COLOR_TEXT)
         domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Tło"]
-        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, COLOR_TEXT] # Tło zmienione na COLOR_TEXT (Kremowy)
+        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, COLOR_TEXT] 
         
         total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
         
-        # Stylizacja paska przewijania
         st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
         
-        # BAZA (TŁO I OSIE)
+        # BAZA WYKRESU
         base = alt.Chart(background_df).encode(
             x=alt.X('Dzień:O', 
                 sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
@@ -621,44 +630,43 @@ else:
                     labelAngle=0, 
                     title=None, 
                     labelFontSize=12, 
-                    labelColor=COLOR_BG, # Ciemny tekst na jasnym tle
-                    titleColor=COLOR_BG
+                    labelColor=COLOR_BG, # Ciemny tekst osi na jasnym tle
+                    titleColor=COLOR_BG,
+                    tickColor=COLOR_BG,
+                    domainColor=COLOR_BG
                 )
             ), 
             y=alt.Y('Godzina:O', 
                 scale=alt.Scale(domain=list(range(24))), 
                 axis=alt.Axis(
                     title=None, 
-                    labelColor=COLOR_BG, # Ciemny tekst
+                    labelColor=COLOR_BG, # Ciemny tekst godzin
                     labelExpr="format(datum.value, '02d') + ':00'", # Formatowanie 00:00
-                    grid=True,
-                    gridColor="gray",
-                    gridOpacity=0.2
+                    tickColor=COLOR_BG,
+                    domainColor=COLOR_BG
                 )
             )
         )
         
-        # WARSTWA 1: TŁO (KREMOWE PROSTOKĄTY)
+        # WARSTWA 1: TŁO (Kremowe)
         layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.1).encode(
-            color=alt.value(COLOR_TEXT), # Jasne tło
+            color=alt.value(COLOR_TEXT), 
             tooltip=['Dzień', 'Godzina']
         )
         
         if not full_df.empty:
-            # DANE DO WYKRESU
             chart_data = alt.Chart(full_df).encode(
                 x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")), 
                 y=alt.Y('Godzina:O'), 
                 tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
             )
             
-            # WARSTWA 2: KAFELKI AKTYWNOŚCI
-            # Stroke ustawiony na COLOR_TEXT, żeby "rozciąć" klocki kolorem tła
+            # WARSTWA 2: KAFELKI (Obrys kremowy, żeby oddzielić klocki)
             layer_rects = chart_data.mark_rect(stroke=COLOR_TEXT, strokeWidth=1).encode(
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
             )
             
-            # WARSTWA 3: NAPISY NA KAFELKACH
+            # WARSTWA 3: TEKST (Kremowy na ciemnych kafelkach)
             layer_text = chart_data.mark_text(
                 dx=-42, 
                 align='left', 
@@ -668,15 +676,91 @@ else:
                 limit=SZEROKOSC_KOLUMNY_DZIEN-10
             ).encode(
                 text=alt.Text('Tytuł_Display'), 
-                color=alt.value(COLOR_TEXT) # Jasny tekst na ciemnych kafelkach (Atrakcje są ciemne)
+                color=alt.value(COLOR_TEXT)
             )
             
-            # ZWIĘKSZONA WYSOKOŚĆ (900 zamiast 600)
             final_chart = (layer_bg + layer_rects + layer_text).properties(height=900, width=total_width)
         else: 
             final_chart = layer_bg.properties(height=900, width=total_width)
             
         st.altair_chart(final_chart)
+    
+    st.divider()
+
+    # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
+    col_toolbox, col_route = st.columns(2)
+
+    # 1. PRZYBORNIK (LEWO)
+    with col_toolbox:
+        with st.container(border=True):
+            st.subheader("📌 Przybornik")
+            c1, c2, c3 = st.columns(3)
+            filtry = []
+            if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
+            if c1.checkbox("Trasa", value=True): filtry.append("Trasa")
+            if c2.checkbox("Jedzenie", value=True): filtry.append("Jedzenie")
+            if c2.checkbox("Impreza", value=True): filtry.append("Impreza")
+            if c3.checkbox("Sport", value=True): filtry.append("Sport/Rekreacja")
+            
+            mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+            niezaplanowane = st.session_state.db[mask_przyb]
+            if not niezaplanowane.empty:
+                filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
+                if not filtrowane_df.empty:
+                    opcje = filtrowane_df['Tytuł'].tolist()
+                    wybrany = st.selectbox("Wybierz element:", opcje)
+                    info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
+                    st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
+                    cd, ch = st.columns(2)
+                    with cd: wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
+                    with ch: wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
+                    if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
+                        with st.spinner("Aktualizuję..."):
+                            start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
+                            idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
+                            st.session_state.db.at[idx, 'Start'] = start_dt
+                            st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
+                            st.session_state.db.at[idx, 'Zaplanowane'] = True
+                            csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                            update_file(repo, data_file, csv_buffer.getvalue())
+                            st.success("Zapisano!"); st.rerun()
+                else: st.warning("Brak elementów w wybranych kategoriach.")
+            else: st.success("Pusto!")
+
+    # 2. SZYBKA TRASA (PRAWO)
+    with col_route:
+        with st.container(border=True):
+            st.subheader("🚗 Dodaj Trasę")
+            
+            r_tytul = st.text_input("Tytuł trasy (np. Dojazd do Włoch)")
+            
+            c_r_data, c_r_godz = st.columns(2)
+            with c_r_data: r_data = st.date_input("Kiedy:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days), key="route_date")
+            with c_r_godz: r_godz = st.selectbox("O której:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=8, key="route_hour")
+            
+            r_czas = st.number_input("Czas trwania (h):", min_value=1.0, step=0.5, value=2.0)
+            
+            if st.button("Dodaj trasę na mapę", type="primary", use_container_width=True):
+                if r_tytul:
+                    with st.spinner("Dodaję trasę..."):
+                        start_dt = datetime.combine(r_data, time(r_godz, 0))
+                        nowa_trasa = pd.DataFrame([{
+                            'Tytuł': r_tytul, 
+                            'Kategoria': 'Trasa', 
+                            'Czas (h)': float(r_czas), 
+                            'Start': start_dt, 
+                            'Koniec': start_dt + timedelta(hours=float(r_czas)), 
+                            'Zaplanowane': True,
+                            'Koszt': 0.0, 
+                            'Typ_Kosztu': 'Indywidualny' 
+                        }])
+                        updated_df = pd.concat([st.session_state.db, nowa_trasa], ignore_index=True)
+                        csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.session_state.db = updated_df
+                        st.success(f"Dodano trasę: {r_tytul}"); st.rerun()
+                else:
+                    st.error("Wpisz tytuł trasy!")
 
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
