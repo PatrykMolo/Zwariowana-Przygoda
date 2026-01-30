@@ -369,13 +369,14 @@ def generuj_tlo_widoku(start_date, num_days):
 tab_edytor, tab_kalendarz, tab_podsumowanie = st.tabs(["📝 Edytor", "📅 Kalendarz", "💰 Podsumowanie"])
 
 # --- TAB 1: EDYTOR (SCALONY) ---
+# --- TAB 1: EDYTOR (SCALONY + SUWAKI PALIWA) ---
 with tab_edytor:
     # Przełącznik trybu na górze
     editor_mode = st.radio(
         "Tryb edycji:", 
         ["🏃 Aktywności (Indywidualne)", "💸 Koszty Wspólne / Paliwo"], 
         horizontal=True,
-        label_visibility="collapsed" # Ukrywamy etykietę "Tryb edycji", zostawiamy same przyciski
+        label_visibility="collapsed"
     )
     
     st.write("") # Odstęp
@@ -440,8 +441,9 @@ with tab_edytor:
             # Wybór pod-typu wewnątrz formularza
             typ_kosztu_input = st.selectbox("Co dodajesz?", ["Wydatek (Nocleg/Inne)", "Paliwo (Trasa)"])
             
-            with st.form("form_wspolne_integrated", clear_on_submit=True):
-                if typ_kosztu_input == "Wydatek (Nocleg/Inne)":
+            # --- FORMULARZ DLA WYDATKÓW (Nocleg, Inne) ---
+            if typ_kosztu_input == "Wydatek (Nocleg/Inne)":
+                with st.form("form_wspolne_general", clear_on_submit=True):
                     nazwa = st.text_input("Nazwa (np. Willa, Winiety)")
                     kategoria_wsp = st.selectbox("Kategoria", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
                     koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
@@ -453,36 +455,67 @@ with tab_edytor:
                             'Start': None, 'Koniec': None, 'Zaplanowane': False, 
                             'Koszt': float(koszt_calosc), 'Typ_Kosztu': 'Wspólny'
                         }])
-                        # Logika zapisu (wspólna)
                         updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                         csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                         update_file(repo, data_file, csv_buffer.getvalue())
                         st.session_state.db = updated_df
                         st.success(f"Dodano {nazwa}!"); st.rerun()
 
-                else: # Paliwo
+            # --- FORMULARZ DLA PALIWA (Z SUWAKAMI) ---
+            else: 
+                # Nie używamy st.form tutaj, bo suwaki wewnątrz forma nie odświeżają wyniku na bieżąco
+                # Zrobimy to w kontenerze, żeby wynik "Koszt Trasy" zmieniał się dynamicznie
+                with st.container(border=True):
                     auto_nazwa = st.text_input("Samochód", value="Auto 1")
                     dystans = st.number_input("Dystans (km)", min_value=0, value=100, step=10)
-                    spalanie = st.number_input("Spalanie (l/100km)", min_value=0.0, value=8.0, step=0.5)
-                    cena_paliwa = st.number_input("Cena paliwa (PLN/l)", min_value=0.0, value=6.50, step=0.01)
+                    
+                    # PRZYWRÓCONE SUWAKI
+                    spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 8.0, step=0.1)
+                    cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.50, step=0.01)
                     
                     koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
                     st.markdown(f"**Wyliczony koszt:** :red[{koszt_trasy:.2f} PLN]")
                     
-                    submitted_fuel = st.form_submit_button("Dodaj Paliwo", type="primary")
-                    if submitted_fuel:
+                    if st.button("Dodaj Paliwo", type="primary", use_container_width=True):
                         tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
                         nowy = pd.DataFrame([{
                             'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 
                             'Start': None, 'Koniec': None, 'Zaplanowane': False, 
                             'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'
                         }])
-                        # Logika zapisu (wspólna)
                         updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                         csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                         update_file(repo, data_file, csv_buffer.getvalue())
                         st.session_state.db = updated_df
                         st.success(f"Dodano {auto_nazwa}!"); st.rerun()
+
+        # PRAWA KOLUMNA: TABELA
+        with col_table:
+            st.subheader("📋 Baza kosztów wspólnych")
+            mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
+            df_wspolne = st.session_state.db[mask_wspolne]
+            
+            if not df_wspolne.empty:
+                cols_to_show = ['Tytuł', 'Kategoria', 'Koszt']
+                
+                event = st.dataframe(
+                    df_wspolne[cols_to_show], 
+                    use_container_width=True, 
+                    hide_index=True, 
+                    selection_mode="multi-row", 
+                    on_select="rerun", 
+                    column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")}
+                )
+                if event.selection.rows:
+                    if st.button("🗑️ Usuń wybrane koszty", type="primary"):
+                         with st.spinner("Usuwam..."):
+                            indeksy = df_wspolne.iloc[event.selection.rows].index
+                            updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
+                            csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                            update_file(repo, data_file, csv_buffer.getvalue())
+                            st.session_state.db = updated_df
+                            st.rerun()
+            else: st.info("Brak kosztów wspólnych.")
 
         # PRAWA KOLUMNA: TABELA
         with col_table:
