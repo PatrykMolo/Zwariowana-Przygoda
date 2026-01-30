@@ -363,54 +363,155 @@ def generuj_tlo_widoku(start_date, num_days):
     return pd.DataFrame(tlo_data)
 
 # ==========================================
-# 📑 GŁÓWNE ZAKŁADKI
+# 📑 GŁÓWNE ZAKŁADKI (ZREDUKOWANE)
 # ==========================================
-tab_edytor, tab_kalendarz, tab_wspolne, tab_podsumowanie = st.tabs(["📝 Edytor i Giełda", "📅 Kalendarz", "💸 Koszty Wspólne", "💰 Podsumowanie"])
+# Scaliliśmy "Edytor i Giełda" oraz "Koszty Wspólne" w jedną zakładkę "Edytor"
+tab_edytor, tab_kalendarz, tab_podsumowanie = st.tabs(["📝 Edytor", "📅 Kalendarz", "💰 Podsumowanie"])
 
-# --- TAB 1: EDYTOR ---
+# --- TAB 1: EDYTOR (SCALONY) ---
 with tab_edytor:
-    col_a, col_b = st.columns([1, 2])
-    with col_a:
-        st.subheader("Dodaj aktywność")
-        with st.form("dodawanie_form", clear_on_submit=True):
-            tytul = st.text_input("Tytuł")
-            kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
-            c1, c2 = st.columns(2)
-            with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
-            with c2: koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
-            submit = st.form_submit_button("Zapisz", type="primary")
+    # Przełącznik trybu na górze
+    editor_mode = st.radio(
+        "Tryb edycji:", 
+        ["🏃 Aktywności (Indywidualne)", "💸 Koszty Wspólne / Paliwo"], 
+        horizontal=True,
+        label_visibility="collapsed" # Ukrywamy etykietę "Tryb edycji", zostawiamy same przyciski
+    )
+    
+    st.write("") # Odstęp
 
-        if submit and tytul:
-            with st.spinner("Zapisuję..."):
-                nowy = pd.DataFrame([{
-                    'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
-                    'Start': None, 'Koniec': None, 'Zaplanowane': False,
-                    'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
-                }])
-                updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                csv_buffer = io.StringIO()
-                updated_df.to_csv(csv_buffer, index=False)
-                update_file(repo, data_file, csv_buffer.getvalue())
-                st.session_state.db = updated_df
-                st.success(f"Dodano '{tytul}'!"); st.rerun()
+    # === TRYB 1: AKTYWNOŚCI ===
+    if editor_mode == "🏃 Aktywności (Indywidualne)":
+        col_a, col_b = st.columns([1, 2]) 
+        with col_a:
+            st.subheader("Dodaj aktywność")
+            with st.form("dodawanie_form", clear_on_submit=True):
+                tytul = st.text_input("Tytuł")
+                kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
+                c1, c2 = st.columns(2)
+                with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
+                with c2: koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
+                submit = st.form_submit_button("Zapisz", type="primary")
 
-    with col_b:
-        st.subheader("📦 Giełda pomysłów")
-        mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
-                              (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-        do_pokazania = st.session_state.db[mask_niezaplanowane]
-        if not do_pokazania.empty:
-            event = st.dataframe(do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True)
-            if event.selection.rows:
-                if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
-                    with st.spinner("Usuwam..."):
-                        indeksy = do_pokazania.iloc[event.selection.rows].index
-                        updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
+            if submit and tytul:
+                with st.spinner("Zapisuję..."):
+                    nowy = pd.DataFrame([{
+                        'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
+                        'Start': None, 'Koniec': None, 'Zaplanowane': False,
+                        'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
+                    }])
+                    updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
+                    csv_buffer = io.StringIO()
+                    updated_df.to_csv(csv_buffer, index=False)
+                    update_file(repo, data_file, csv_buffer.getvalue())
+                    st.session_state.db = updated_df
+                    st.success(f"Dodano '{tytul}'!"); st.rerun()
+
+        with col_b:
+            st.subheader("📦 Giełda pomysłów (Poczekalnia)")
+            mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
+                                  (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+            do_pokazania = st.session_state.db[mask_niezaplanowane]
+            
+            if not do_pokazania.empty:
+                event = st.dataframe(
+                    do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
+                    use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
+                )
+                if event.selection.rows:
+                    if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
+                        with st.spinner("Usuwam..."):
+                            indeksy = do_pokazania.iloc[event.selection.rows].index
+                            updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
+                            csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                            update_file(repo, data_file, csv_buffer.getvalue())
+                            st.session_state.db = updated_df
+                            st.rerun()
+            else: st.info("Brak nieprzypisanych elementów. Dodaj coś po lewej!")
+
+    # === TRYB 2: KOSZTY WSPÓLNE ===
+    else:
+        col_form, col_table = st.columns([1, 2])
+        
+        # LEWA KOLUMNA: FORMULARZ (ZINTEGROWANY)
+        with col_form:
+            st.subheader("Dodaj koszt wspólny")
+            
+            # Wybór pod-typu wewnątrz formularza
+            typ_kosztu_input = st.selectbox("Co dodajesz?", ["Wydatek (Nocleg/Inne)", "Paliwo (Trasa)"])
+            
+            with st.form("form_wspolne_integrated", clear_on_submit=True):
+                if typ_kosztu_input == "Wydatek (Nocleg/Inne)":
+                    nazwa = st.text_input("Nazwa (np. Willa, Winiety)")
+                    kategoria_wsp = st.selectbox("Kategoria", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
+                    koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
+                    
+                    submitted = st.form_submit_button("Dodaj Wydatek", type="primary")
+                    if submitted and nazwa and koszt_calosc > 0:
+                        nowy = pd.DataFrame([{
+                            'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 
+                            'Start': None, 'Koniec': None, 'Zaplanowane': False, 
+                            'Koszt': float(koszt_calosc), 'Typ_Kosztu': 'Wspólny'
+                        }])
+                        # Logika zapisu (wspólna)
+                        updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
                         csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                         update_file(repo, data_file, csv_buffer.getvalue())
                         st.session_state.db = updated_df
-                        st.rerun()
-        else: st.info("Brak elementów.")
+                        st.success(f"Dodano {nazwa}!"); st.rerun()
+
+                else: # Paliwo
+                    auto_nazwa = st.text_input("Samochód", value="Auto 1")
+                    dystans = st.number_input("Dystans (km)", min_value=0, value=100, step=10)
+                    spalanie = st.number_input("Spalanie (l/100km)", min_value=0.0, value=8.0, step=0.5)
+                    cena_paliwa = st.number_input("Cena paliwa (PLN/l)", min_value=0.0, value=6.50, step=0.01)
+                    
+                    koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
+                    st.markdown(f"**Wyliczony koszt:** :red[{koszt_trasy:.2f} PLN]")
+                    
+                    submitted_fuel = st.form_submit_button("Dodaj Paliwo", type="primary")
+                    if submitted_fuel:
+                        tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
+                        nowy = pd.DataFrame([{
+                            'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 
+                            'Start': None, 'Koniec': None, 'Zaplanowane': False, 
+                            'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'
+                        }])
+                        # Logika zapisu (wspólna)
+                        updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
+                        csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.session_state.db = updated_df
+                        st.success(f"Dodano {auto_nazwa}!"); st.rerun()
+
+        # PRAWA KOLUMNA: TABELA
+        with col_table:
+            st.subheader("📋 Baza kosztów wspólnych")
+            mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
+            df_wspolne = st.session_state.db[mask_wspolne]
+            
+            if not df_wspolne.empty:
+                # Ukrywamy kolumnę 'Typ_Kosztu' wybierając tylko te potrzebne
+                cols_to_show = ['Tytuł', 'Kategoria', 'Koszt']
+                
+                event = st.dataframe(
+                    df_wspolne[cols_to_show], 
+                    use_container_width=True, 
+                    hide_index=True, 
+                    selection_mode="multi-row", 
+                    on_select="rerun", 
+                    column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")}
+                )
+                if event.selection.rows:
+                    if st.button("🗑️ Usuń wybrane koszty", type="primary"):
+                         with st.spinner("Usuwam..."):
+                            indeksy = df_wspolne.iloc[event.selection.rows].index
+                            updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
+                            csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
+                            update_file(repo, data_file, csv_buffer.getvalue())
+                            st.session_state.db = updated_df
+                            st.rerun()
+            else: st.info("Brak kosztów wspólnych.")
 
 # --- TAB 2: KALENDARZ (HYBRID) ---
 with tab_kalendarz:
@@ -424,6 +525,34 @@ with tab_kalendarz:
     if not df_events.empty:
         df_events['Start'] = pd.to_datetime(df_events['Start'])
         df_events = df_events.sort_values(by='Start')
+        
+    # --- EKSPORT ICS ---
+    def create_ics_file(df):
+        ics_content = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ZwariowanaPrzygoda//PL", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
+        mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
+        events = df[mask]
+        for _, row in events.iterrows():
+            if pd.isna(row['Start']) or row['Start'] == "": continue
+            start_dt = row['Start'].strftime('%Y%m%dT%H%M%S')
+            end_dt = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%Y%m%dT%H%M%S')
+            try: koszt_opis = f"Koszt: {float(row['Koszt']):.0f} PLN"
+            except: koszt_opis = ""
+            opis = f"{row['Kategoria']} \\n{koszt_opis}"
+            ics_content.append("BEGIN:VEVENT")
+            ics_content.append(f"SUMMARY:{row['Tytuł']}")
+            ics_content.append(f"DTSTART:{start_dt}")
+            ics_content.append(f"DTEND:{end_dt}")
+            ics_content.append(f"DESCRIPTION:{opis}")
+            ics_content.append(f"STATUS:CONFIRMED")
+            ics_content.append("END:VEVENT")
+        ics_content.append("END:VCALENDAR")
+        return "\n".join(ics_content)
+
+    if not df_events.empty:
+        ics_data = create_ics_file(st.session_state.db)
+        safe_name = st.session_state.config_trip_name.replace(" ", "_").lower()
+        st.download_button("📅 Pobierz do Kalendarza", data=ics_data, file_name=f"{safe_name}.ics", mime="text/calendar", use_container_width=True)
+        st.divider()
 
     if mobile_mode:
         if df_events.empty: st.info("Nic jeszcze nie zaplanowano.")
@@ -453,8 +582,6 @@ with tab_kalendarz:
                     card_html += "</div>"
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
-
-   
     else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
@@ -474,7 +601,7 @@ with tab_kalendarz:
     st.divider()
     col_tools_left, col_tools_right = st.columns([1, 1])
     with col_tools_left:
-        st.subheader("Dodaj do kalendarza")
+        st.subheader("📌 Przybornik")
         c1, c2, c3 = st.columns(3)
         filtry = []
         if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
@@ -525,116 +652,6 @@ with tab_kalendarz:
                         st.rerun()
         else: st.info("Kalendarz pusty.")
 
- # ==========================
-    # 📥 EKSPORT DO .ICS
-    # ==========================
-    def create_ics_file(df):
-        # Format nagłówka iCalendar
-        ics_content = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            "PRODID:-//ZwariowanaPrzygoda//PL",
-            "CALSCALE:GREGORIAN",
-            "METHOD:PUBLISH"
-        ]
-        
-        # Filtrujemy tylko zaplanowane
-        mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
-        events = df[mask]
-
-        for _, row in events.iterrows():
-            if pd.isna(row['Start']) or row['Start'] == "": continue
-            
-            # Konwersja dat na format wymagany przez ICS: YYYYMMDDTHHMMSS
-            start_dt = row['Start'].strftime('%Y%m%dT%H%M%S')
-            end_dt = (row['Start'] + timedelta(hours=float(row['Czas (h)']))).strftime('%Y%m%dT%H%M%S')
-            
-            try: koszt_opis = f"Koszt: {float(row['Koszt']):.0f} PLN"
-            except: koszt_opis = ""
-            
-            opis = f"{row['Kategoria']} \\n{koszt_opis}" # \n to nowa linia w opisie
-            
-            ics_content.append("BEGIN:VEVENT")
-            ics_content.append(f"SUMMARY:{row['Tytuł']}")
-            ics_content.append(f"DTSTART:{start_dt}")
-            ics_content.append(f"DTEND:{end_dt}")
-            ics_content.append(f"DESCRIPTION:{opis}")
-            ics_content.append(f"STATUS:CONFIRMED")
-            ics_content.append("END:VEVENT")
-
-        ics_content.append("END:VCALENDAR")
-        return "\n".join(ics_content)
-
-    # Przycisk pobierania (pokazujemy go tylko jeśli są jakieś wydarzenia)
-    if not df_events.empty:
-        ics_data = create_ics_file(st.session_state.db)
-        # Generujemy nazwę pliku na podstawie nazwy wyprawy
-        safe_name = st.session_state.config_trip_name.replace(" ", "_").lower()
-        
-        st.download_button(
-            label="📅 Pobierz do Kalendarza (Google/Apple)",
-            data=ics_data,
-            file_name=f"{safe_name}.ics",
-            mime="text/calendar",
-            help="Pobierz plik i otwórz go, aby dodać wydarzenia do swojego kalendarza.",
-            use_container_width=True
-        )
-        st.divider()
-        
-
-# --- TAB 3: WSPÓLNE ---
-with tab_wspolne:
-    col_fixed, col_fuel = st.columns(2)
-    with col_fixed:
-        st.markdown("### 🏨 Noclegi i Opłaty")
-        with st.form("form_wspolne", clear_on_submit=True):
-            nazwa = st.text_input("Nazwa")
-            kategoria_wsp = st.selectbox("Rodzaj", ["Nocleg", "Wynajem Busa", "Winiety", "Inne"])
-            koszt_calosc = st.number_input("Łączny koszt (PLN)", min_value=0.0, step=100.0)
-            if st.form_submit_button("Dodaj do wspólnych"):
-                if nazwa and koszt_calosc > 0:
-                    nowy = pd.DataFrame([{'Tytuł': nazwa, 'Kategoria': kategoria_wsp, 'Czas (h)': 0, 'Start': None, 'Koniec': None, 'Zaplanowane': False, 'Koszt': float(koszt_calosc), 'Typ_Kosztu': 'Wspólny'}])
-                    updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                    csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
-                    update_file(repo, data_file, csv_buffer.getvalue())
-                    st.session_state.db = updated_df
-                    st.success(f"Dodano {nazwa}!"); st.rerun()
-
-    with col_fuel:
-        st.markdown("### ⛽ Kalkulator Trasy")
-        with st.container(border=True):
-            auto_nazwa = st.text_input("Samochód", value="BMW")
-            dystans = st.number_input("Dystans (km)", min_value=0, value=3400, step=10)
-            spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 6.0, step=0.1)
-            cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.0, step=0.01)
-            koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
-            st.markdown(f"**Szacowany koszt:** :red[{koszt_trasy:.2f} PLN]")
-            if st.button("➕ Dodaj samochód do rozliczenia"):
-                tytul_auta = f"Paliwo: {auto_nazwa} ({dystans}km)"
-                nowy = pd.DataFrame([{'Tytuł': tytul_auta, 'Kategoria': 'Trasa', 'Czas (h)': 0, 'Start': None, 'Koniec': None, 'Zaplanowane': False, 'Koszt': float(koszt_trasy), 'Typ_Kosztu': 'Paliwo'}])
-                updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
-                update_file(repo, data_file, csv_buffer.getvalue())
-                st.session_state.db = updated_df
-                st.success(f"Dodano {auto_nazwa}!"); st.rerun()
-
-    st.divider()
-    st.markdown("### 📋 Lista dodanych kosztów wspólnych")
-    mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
-    df_wspolne = st.session_state.db[mask_wspolne]
-    if not df_wspolne.empty:
-        event = st.dataframe(df_wspolne[['Tytuł', 'Kategoria', 'Typ_Kosztu', 'Koszt']], use_container_width=True, hide_index=True, selection_mode="multi-row", on_select="rerun", column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")})
-        if event.selection.rows:
-            if st.button("🗑️ Usuń wybrane koszty wspólne", type="primary"):
-                 with st.spinner("Usuwam..."):
-                    indeksy = df_wspolne.iloc[event.selection.rows].index
-                    updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
-                    csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
-                    update_file(repo, data_file, csv_buffer.getvalue())
-                    st.session_state.db = updated_df
-                    st.rerun()
-    else: st.info("Jeszcze nie dodałeś żadnych wspólnych wydatków.")
-
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
     st.subheader("Podsumowanie Wyjazdu")
@@ -677,10 +694,9 @@ with tab_podsumowanie:
             )
             
             # 2. Warstwa Tła Etykiet (Trick: Wielka kropka "●")
-            # Używamy mark_text z radius=120, żeby tło było w tym samym miejscu co liczby
             labels_bg = base.mark_text(radius=120, size=60).encode(
                 text=alt.value("●"),       # Znak kropki jako tło
-                color=alt.value("#1e2630"), # Ciemne tło (kolor tła strony dla "wycięcia" lub szary)
+                color=alt.value("#1e2630"), # Ciemne tło 
                 opacity=alt.value(0.6),    # Lekka przezroczystość
                 order=alt.Order("Kategoria")
             )
@@ -714,4 +730,3 @@ with tab_podsumowanie:
             text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5, size=12).encode(text=alt.Text('Koszt:Q', format='.0f'), color=alt.value(COLOR_TEXT))
             st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
         else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
-
