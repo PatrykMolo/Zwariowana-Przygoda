@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE + FIX PUSTEGO EKRANU) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX PUSTEGO EKRANU) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -651,7 +651,6 @@ with tab_kalendarz:
             for _, row in df_raw.iterrows():
                 s = row['Start']
                 e = row['Koniec']
-                # Pętla cięcia
                 while s.date() < e.date():
                     end_of_day = datetime.combine(s.date(), time(23, 59, 59))
                     segment = row.copy()
@@ -670,13 +669,19 @@ with tab_kalendarz:
         else:
             df_chart = pd.DataFrame(columns=['Start', 'Koniec', 'Tytuł', 'Kategoria', 'Day_Label'])
 
-        # --- GLÓWNA POPRAWKA: WARSTWA TŁA (GRID) ---
-        # Tworzymy "pustą" ramkę ze wszystkimi dniami, żeby wymusić narysowanie kolumn
-        # Dodajemy sztuczną kolumnę 'Start' tylko po to, by Altair wiedział jak ustawić oś Y
-        bg_data = pd.DataFrame({'Day_Label': all_days_labels})
-        bg_data['Start'] = y_min # Dummy data dla skali Y
+        # --- WARSTWA TŁA (FIX GLÓWNY) ---
+        # Tworzymy pełne prostokąty tła (00:00-23:59) dla KAŻDEGO dnia
+        # To wymusza narysowanie osi Y na pełną wysokość
+        bg_rows = []
+        for d_label in all_days_labels:
+            bg_rows.append({
+                'Day_Label': d_label,
+                'Start': y_min,
+                'Koniec': y_max
+            })
+        bg_data = pd.DataFrame(bg_rows)
         
-        # 1. Rysujemy samą siatkę (Grid) na bazie pustych danych
+        # 1. Rysujemy niewidoczne tło (Opacity 0), ale definiujemy Y i Y2!
         base_grid = alt.Chart(bg_data).mark_rect(opacity=0).encode(
             x=alt.X('Day_Label:N', 
                     title=None, 
@@ -692,7 +697,7 @@ with tab_kalendarz:
                     )
             ),
             y=alt.Y('hoursminutes(Start):T',
-                    scale=alt.Scale(reverse=True, domain=[y_min, y_max]), # SZTYWNA SKALA
+                    scale=alt.Scale(reverse=True, domain=[y_min, y_max]),
                     axis=alt.Axis(
                         format='%H:%M', 
                         labelColor=COLOR_TEXT, 
@@ -702,7 +707,8 @@ with tab_kalendarz:
                         domain=False, 
                         tickColor=COLOR_BG
                     )
-            )
+            ),
+            y2='hoursminutes(Koniec):T' # To jest kluczowe - definiuje koniec doby
         )
 
         # 2. Rysujemy Paski (Jeśli są dane)
@@ -727,7 +733,7 @@ with tab_kalendarz:
             
             final_chart = (base_grid + bars + text + text_time)
         else:
-            # Jeśli brak danych, wyświetlamy samą siatkę
+            # Jeśli brak danych, wyświetlamy samą siatkę (base_grid wystarczy, bo ma zdefiniowane wymiary)
             final_chart = base_grid
 
         # Finalna konfiguracja
