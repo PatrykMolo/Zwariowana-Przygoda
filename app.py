@@ -710,36 +710,55 @@ with tab_podsumowanie:
     with col_left:
         with st.container(border=True):
             st.markdown("#### Struktura kosztów")
+            
+            # 1. Agregacja wszystkich indywidualnych jako "Atrakcje"
             pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
+            
+            # 2. Dodanie kosztów wspólnych rozbitych na kategorie
             if not df_B.empty:
                 grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
-                for _, row in grouped_B.iterrows(): pie_data.append({'Kategoria': row['Kategoria'], 'Wartość': row['Koszt'] / liczba_osob})
+                for _, row in grouped_B.iterrows(): 
+                    pie_data.append({'Kategoria': row['Kategoria'], 'Wartość': row['Koszt'] / liczba_osob})
+            
             df_pie = pd.DataFrame(pie_data); df_pie = df_pie[df_pie['Wartość'] > 0]
+            
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # ZAKTUALIZOWANA PALETA (WSZYSTKIE KATEGORIE)
-                # Atrakcje i Trasa mają swoje główne kolory
-                # Nocleg, Bus, Winiety dostały kolory dodatkowe z palety
+                # NOWA PALETA I DOMENA (NAPRAWIONE)
+                # Atrakcje = Czerwony
+                # Trasa = Niebieski
+                # Reszta (Nocleg, Bus etc.) = Kolory z palety (Oliwka, Fiolet, Złoto)
                 pie_scale = alt.Scale(
-                    domain=["Atrakcja", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
+                    domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
                     range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "#888888"]
                 )
                 
                 base = alt.Chart(df_pie).encode(
                     theta=alt.Theta("Wartość", stack=True)
                 )
+                
                 pie = base.mark_arc(innerRadius=50).encode(
-                    color=alt.Color("Kategoria", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
+                    color=alt.Color("Kategoria", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT, columns=2)),
                     order=alt.Order("Kategoria"), 
                     tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
                 )
+                
+                # Tło etykiety (kropka)
                 labels_bg = base.mark_text(radius=120, size=60).encode(
-                    text=alt.value("●"), color=alt.value("#1e2630"), opacity=alt.value(0.6), order=alt.Order("Kategoria")
+                    text=alt.value("●"), 
+                    color=alt.value("#1e2630"), 
+                    opacity=alt.value(0.6), 
+                    order=alt.Order("Kategoria")
                 )
+                
+                # Etykieta (procent)
                 labels_text = base.mark_text(radius=120, size=14, fontWeight="bold").encode(
-                    text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT) 
+                    text=alt.Text("Procent", format=".0%"), 
+                    order=alt.Order("Kategoria"), 
+                    color=alt.value(COLOR_TEXT) 
                 )
+                
                 st.altair_chart(pie + labels_bg + labels_text, use_container_width=True)
             else: st.caption("Brak danych.")
             
