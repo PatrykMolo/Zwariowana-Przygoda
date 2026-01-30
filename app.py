@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX PÓŁNOCY) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX 24H) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -638,7 +638,11 @@ with tab_kalendarz:
 
         calc_width = max(len(all_days_labels) * 120, 600)
 
-        # --- LOGIKA CIĘCIA PRZEZ PÓŁNOC (FIX) ---
+        # Definiujemy sztywny zakres doby dla osi Y (Data nie ma znaczenia, liczy się czas)
+        y_min = datetime(2000, 1, 1, 0, 0, 0)
+        y_max = datetime(2000, 1, 1, 23, 59, 59)
+
+        # --- LOGIKA CIĘCIA PRZEZ PÓŁNOC ---
         chart_rows = []
         if not df_raw.empty:
             df_raw['Start'] = pd.to_datetime(df_raw['Start'])
@@ -648,27 +652,20 @@ with tab_kalendarz:
                 s = row['Start']
                 e = row['Koniec']
                 
-                # Jeśli wydarzenie kończy się w innym dniu niż zaczyna
                 while s.date() < e.date():
-                    # Tworzymy segment do końca bieżącego dnia (23:59:59)
                     end_of_day = datetime.combine(s.date(), time(23, 59, 59))
-                    
                     segment = row.copy()
                     segment['Start'] = s
                     segment['Koniec'] = end_of_day
                     chart_rows.append(segment)
-                    
-                    # Przesuwamy start na początek następnego dnia (00:00:00)
                     s = datetime.combine(s.date() + timedelta(days=1), time(0, 0, 0))
                 
-                # Dodajemy ostatni segment (lub jedyny, jeśli nie przechodziło przez północ)
                 last_segment = row.copy()
                 last_segment['Start'] = s
                 last_segment['Koniec'] = e
                 chart_rows.append(last_segment)
                 
             df_chart = pd.DataFrame(chart_rows)
-            # Generujemy etykietę dnia PO pocięciu
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
         else:
             df_chart = pd.DataFrame()
@@ -697,7 +694,8 @@ with tab_kalendarz:
                 ),
                 y=alt.Y('hoursminutes(Start):T', 
                         title=None,
-                        scale=alt.Scale(reverse=True), 
+                        # FIX: Sztywny zakres (domain) od 00:00 do 23:59
+                        scale=alt.Scale(reverse=True, domain=[y_min, y_max]), 
                         axis=alt.Axis(
                             format='%H:%M', 
                             labelColor=COLOR_TEXT, 
@@ -725,8 +723,10 @@ with tab_kalendarz:
 
             final_chart = (bars + text + text_time)
         else:
+            # Pusty wykres (dla samej siatki) - tutaj też musimy wymusić skalę Y
             final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
-                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
+                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top')),
+                y=alt.Y(field='dummy', type='temporal', scale=alt.Scale(reverse=True, domain=[y_min, y_max]), axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, grid=True, gridColor="#444444", gridOpacity=0.3))
             )
 
         # Finalna konfiguracja
