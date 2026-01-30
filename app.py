@@ -610,82 +610,76 @@ with tab_kalendarz:
                 st.write("")
     
     # --- WIDOK DESKTOPOWY (ALTAIR) ---
+    # --- WIDOK DESKTOPOWY (NOWY TIMELINE) ---
     else:
-        background_df = generuj_tlo_widoku(current_start_date, current_days)
-        full_df = przygotuj_dane_do_siatki(st.session_state.db)
-        
-        # Definicja kolorów dla wykresu (Tło jest teraz KREMOWE - COLOR_TEXT)
-        domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Tło"]
-        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, COLOR_TEXT] 
-        
-        total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
-        
-        st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
-        
-        # BAZA WYKRESU
-        base = alt.Chart(background_df).encode(
-            x=alt.X('Dzień:O', 
-                sort=alt.EncodingSortField(field="DataFull", order="ascending"), 
-                axis=alt.Axis(
-                    labelAngle=0, 
-                    title=None, 
-                    labelFontSize=12, 
-                    labelColor=COLOR_BG, # Ciemny tekst osi na jasnym tle
-                    titleColor=COLOR_BG,
-                    tickColor=COLOR_BG,
-                    domainColor=COLOR_BG
-                )
-            ), 
-            y=alt.Y('Godzina:O', 
-                scale=alt.Scale(domain=list(range(24))), 
-                axis=alt.Axis(
-                    title=None, 
-                    labelColor=COLOR_BG, # Ciemny tekst godzin
-                    labelExpr="format(datum.value, '02d') + ':00'", # Formatowanie 00:00
-                    tickColor=COLOR_BG,
-                    domainColor=COLOR_BG
-                )
-            )
-        )
-        
-        # WARSTWA 1: TŁO (Kremowe)
-        layer_bg = base.mark_rect(stroke='gray', strokeWidth=0.1).encode(
-            color=alt.value(COLOR_TEXT), 
-            tooltip=['Dzień', 'Godzina']
-        )
-        
-        if not full_df.empty:
-            chart_data = alt.Chart(full_df).encode(
-                x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending")), 
-                y=alt.Y('Godzina:O'), 
-                tooltip=['Tytuł_Full', 'Kategoria', 'Godzina', 'Dzień']
-            )
+        # Filtrujemy dane (tylko to co ma datę startu)
+        mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
+               (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        df_chart = st.session_state.db[mask].copy()
+
+        if not df_chart.empty:
+            # Przygotowanie danych dla Altair
+            df_chart['Start'] = pd.to_datetime(df_chart['Start'])
+            df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
             
-            # WARSTWA 2: KAFELKI (Obrys kremowy, żeby oddzielić klocki)
-            layer_rects = chart_data.mark_rect(stroke=COLOR_TEXT, strokeWidth=1).encode(
-                color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None)
-            )
+            # Tworzymy etykietę dnia do sortowania na osi Y
+            df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
+            df_chart['Day_Sort'] = df_chart['Start'].dt.date.astype(str)
             
-            # WARSTWA 3: TEKST (Kremowy na ciemnych kafelkach)
-            layer_text = chart_data.mark_text(
-                dx=-42, 
-                align='left', 
-                baseline='middle', 
-                fontSize=11, 
-                fontWeight='bold', 
-                limit=SZEROKOSC_KOLUMNY_DZIEN-10
+            # Paleta kolorów
+            domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
+            range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
+
+            # Ustawienia wykresu
+            st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
+            
+            # BAZA - PASKI (BARS)
+            bars = alt.Chart(df_chart).mark_bar(
+                cornerRadius=8, # Zaokrąglone rogi (wygląda nowocześnie)
+                height=40       # Wysokość pojedynczego wiersza dnia
             ).encode(
-                text=alt.Text('Tytuł_Display'), 
-                color=alt.value(COLOR_TEXT)
+                x=alt.X('hoursminutes(Start):T', title='Godzina', axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, gridColor="#444444")),
+                x2='hoursminutes(Koniec):T',
+                y=alt.Y('Day_Label:N', 
+                        title=None, 
+                        sort=alt.EncodingSortField(field="Day_Sort", order="ascending"),
+                        axis=alt.Axis(labelColor=COLOR_TEXT, labelFontSize=13, labelFontWeight="bold")
+                ),
+                color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
+                tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
             )
-            
-            final_chart = (layer_bg + layer_rects + layer_text).properties(height=900, width=total_width)
-        else: 
-            final_chart = layer_bg.properties(height=900, width=total_width)
-            
-        st.altair_chart(final_chart)
-    
-    st.divider()
+
+            # WARSTWA TEKSTU (TYTUŁY NA PASKACH)
+            text = alt.Chart(df_chart).mark_text(
+                align='left',
+                baseline='middle',
+                dx=5,  # Margines od lewej krawędzi paska
+                color='white', # Zawsze biały tekst na kolorowym pasku
+                fontWeight='bold',
+                fontSize=12
+            ).encode(
+                x='hoursminutes(Start):T',
+                x2='hoursminutes(Koniec):T',
+                y=alt.Y('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                text='Tytuł'
+            )
+
+            # ŁĄCZENIE I KONFIGURACJA
+            # configure_view(stroke=None) usuwa ramkę dookoła wykresu
+            chart = (bars + text).properties(
+                height=len(df_chart['Day_Label'].unique()) * 60 + 50, # Dynamiczna wysokość zależna od liczby dni
+                background=COLOR_BG # Tło całego wykresu
+            ).configure_axis(
+                grid=True,
+                domain=False
+            ).configure_view(
+                strokeWidth=0
+            )
+
+            st.altair_chart(chart, use_container_width=True)
+        
+        else:
+            st.info("Kalendarz jest pusty. Dodaj aktywności lub trasę, aby zobaczyć plan.")
 
     # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
