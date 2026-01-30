@@ -275,7 +275,7 @@ def save_manager_dialog():
                 st.success("Usunięto."); st.rerun()
 
 # ==========================================
-# 🗑️ DIALOG: ODPINANIE (NOWY)
+# 🗑️ DIALOG: ODPINANIE
 # ==========================================
 @st.dialog("🗑️ Odepnij z kalendarza")
 def unpin_dialog():
@@ -424,11 +424,12 @@ with tab_edytor:
                 st.subheader("➕ Dodaj aktywność")
                 with st.form("dodawanie_form", clear_on_submit=True):
                     tytul = st.text_input("Tytuł")
-                    kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
+                    # ZMIANA: Usunięto "Trasa" z listy
+                    kat = st.selectbox("Kategoria", ["Atrakcja", "Odpoczynek"]) 
                     c1, c2 = st.columns(2)
                     with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
                     with c2: koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
-                    submit = st.form_submit_button("Zapisz", type="primary")
+                    submit = st.form_submit_button("Zapisz", type="primary", use_container_width=True)
 
             if submit and tytul:
                 with st.spinner("Zapisuję..."):
@@ -457,7 +458,7 @@ with tab_edytor:
                         use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
                     )
                     if event.selection.rows:
-                        if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
+                        if st.button("🗑️ Usuń zaznaczone trwale", type="primary", use_container_width=True):
                             with st.spinner("Usuwam..."):
                                 indeksy = do_pokazania.iloc[event.selection.rows].index
                                 updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
