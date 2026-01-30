@@ -13,13 +13,13 @@ import uuid
 # ==========================================
 COLOR_BG = "#1e2630"        # Gunmetal (Tło)
 COLOR_TEXT = "#faf9dd"      # Cream (Tekst)
-COLOR_ACCENT = "#d37759"    # Terracotta (Atrakcja)
-COLOR_SEC = "#4a7a96"       # Muted Blue (Trasa)
+COLOR_ACCENT = "#d37759"    # Terracotta (Akcent: Przyciski, Atrakcje)
+COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
 
-# Dodatkowe kolory do kategorii:
+# Dodatkowe kolory do kategorii (używane w Kalendarzu):
 COLOR_FOOD = "#7c8c58"      # Olive Drab (Jedzenie)
 COLOR_PARTY = "#8c5e7c"     # Muted Plum (Impreza)
-COLOR_SPORT = "#e0c068"     # Muted Gold (Sport/Rekreacja) - NOWY KOLOR
+COLOR_SPORT = "#e0c068"     # Muted Gold (Sport/Rekreacja)
 
 # ==========================================
 # ⚙️ KONFIGURACJA PLIKÓW
@@ -74,7 +74,7 @@ st.markdown(
         border-bottom-color: {COLOR_ACCENT} !important;
     }}
     
-    /* Ramki kontenerów - delikatne dopasowanie */
+    /* Ramki kontenerów */
     [data-testid="stVerticalBlockBorderWrapper"] > div > div {{
         border-color: rgba(250, 249, 221, 0.2) !important; 
     }}
@@ -110,7 +110,6 @@ def get_registry(repo):
         contents = repo.get_contents(REGISTRY_FILE)
         return json.loads(contents.decoded_content.decode("utf-8"))
     except Exception:
-        # MIGRACJA
         try:
             old_data = repo.get_contents("data.csv")
             repo.update_file("default_data.csv", "Migracja", old_data.decoded_content, old_data.sha)
@@ -188,18 +187,15 @@ def delete_trip_files(repo, trip_id):
 # ==========================================
 repo = init_github()
 if repo:
-    # 1. Pobierz rejestr
     registry = get_registry(repo)
     remote_current_id = registry.get("current", "default")
     
-    # 2. Logika manualnego przełączenia (Flaga)
     if 'manual_switch_flag' in st.session_state and st.session_state.manual_switch_flag:
         current_id = st.session_state.current_trip_id
         del st.session_state.manual_switch_flag 
     else:
         current_id = remote_current_id
 
-    # 3. Pobierz pliki
     data_file, config_file = get_trip_files(current_id)
     
     if 'current_trip_id' not in st.session_state or st.session_state.current_trip_id != current_id or 'db' not in st.session_state:
@@ -225,7 +221,6 @@ def save_manager_dialog():
     st.info(f"Aktualnie edytujesz: **{current_name}**")
     st.divider()
     
-    # 1. PRZEŁĄCZANIE
     st.markdown("#### 🔄 Przełącz wyprawę")
     try: curr_index = trip_names.index(current_name)
     except ValueError: curr_index = 0
@@ -243,7 +238,6 @@ def save_manager_dialog():
                 st.rerun()
 
     st.divider()
-    # 2. TWORZENIE
     st.markdown("#### ✨ Nowa Wyprawa")
     with st.form("new_trip_form"):
         new_trip_name = st.text_input("Nazwa nowej wyprawy (np. Alpy 2027)")
@@ -265,7 +259,7 @@ def save_manager_dialog():
                     st.session_state.manual_switch_flag = True
                     if 'db' in st.session_state: del st.session_state.db
                     st.rerun()
-    # 3. USUWANIE
+    
     if len(trips_dict) > 1:
         with st.expander("🗑️ Usuwanie"):
             to_del = st.selectbox("Wybierz do usunięcia:", [n for n in trip_names if n != current_name])
@@ -282,19 +276,16 @@ def save_manager_dialog():
 @st.dialog("🗑️ Odepnij z kalendarza")
 def unpin_dialog():
     st.write("Wybierz wydarzenie, które chcesz zdjąć z planu (trafi z powrotem do Edytora).")
-    
     mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
     zaplanowane = st.session_state.db[mask_zap]
     
     if not zaplanowane.empty:
         zaplanowane_sorted = zaplanowane.sort_values(by='Start')
         opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
-        
         wybrany_op = st.selectbox("Wybierz wydarzenie:", opcje)
         
         if wybrany_op:
             orig_tytul = zaplanowane_sorted.iloc[opcje.index(wybrany_op)]['Tytuł']
-            
             st.warning(f"Czy na pewno chcesz odpiąć: **{orig_tytul}**?")
             
             if st.button("Tak, odepnij", type="primary", use_container_width=True):
@@ -305,8 +296,7 @@ def unpin_dialog():
                     csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
                     update_file(repo, data_file, csv_buffer.getvalue())
                     st.rerun()
-    else:
-        st.info("Kalendarz jest pusty. Nie ma czego odpinać.")
+    else: st.info("Kalendarz jest pusty. Nie ma czego odpinać.")
 
 # ==========================================
 # ⚙️ DIALOG KONFIGURACJI
@@ -408,17 +398,14 @@ tab_edytor, tab_kalendarz, tab_podsumowanie = st.tabs(["📝 Edytor", "📅 Kale
 
 # --- TAB 1: EDYTOR (SCALONY + SUWAKI PALIWA) ---
 with tab_edytor:
-    # Przełącznik trybu na górze
     editor_mode = st.radio(
         "Tryb edycji:", 
         ["🏃 Aktywności (Indywidualne)", "💸 Koszty Wspólne / Paliwo"], 
         horizontal=True,
         label_visibility="collapsed"
     )
-    
-    st.write("") # Odstęp
+    st.write("")
 
-    # === TRYB 1: AKTYWNOŚCI ===
     if editor_mode == "🏃 Aktywności (Indywidualne)":
         col_a, col_b = st.columns([1, 1.5]) 
         with col_a:
@@ -426,7 +413,6 @@ with tab_edytor:
                 st.subheader("➕ Dodaj aktywność")
                 with st.form("dodawanie_form", clear_on_submit=True):
                     tytul = st.text_input("Tytuł")
-                    # NOWA LISTA KATEGORII
                     kat = st.selectbox("Kategoria", ["Atrakcja", "Jedzenie", "Impreza", "Sport/Rekreacja"]) 
                     c1, c2 = st.columns(2)
                     with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
@@ -441,8 +427,7 @@ with tab_edytor:
                         'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
                     }])
                     updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                    csv_buffer = io.StringIO()
-                    updated_df.to_csv(csv_buffer, index=False)
+                    csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                     update_file(repo, data_file, csv_buffer.getvalue())
                     st.session_state.db = updated_df
                     st.success(f"Dodano '{tytul}'!"); st.rerun()
@@ -470,20 +455,14 @@ with tab_edytor:
                                 st.rerun()
                 else: st.info("Brak nieprzypisanych elementów. Dodaj coś po lewej!")
 
-    # === TRYB 2: KOSZTY WSPÓLNE ===
     else:
         col_form, col_table = st.columns([1, 1.5])
-        
-        # LEWA KOLUMNA: FORMULARZ (ZINTEGROWANY)
         with col_form:
             with st.container(border=True):
                 st.subheader("➕ Dodaj koszt wspólny")
-                
-                # Wybór pod-typu wewnątrz formularza
                 typ_kosztu_input = st.selectbox("Co dodajesz?", ["Wydatek (Nocleg/Inne)", "Paliwo (Trasa)"])
                 st.divider()
 
-                # --- FORMULARZ DLA WYDATKÓW (Nocleg, Inne) ---
                 if typ_kosztu_input == "Wydatek (Nocleg/Inne)":
                     with st.form("form_wspolne_general", clear_on_submit=True):
                         nazwa = st.text_input("Nazwa (np. Willa, Winiety)")
@@ -504,15 +483,11 @@ with tab_edytor:
                             st.session_state.db = updated_df
                             st.success(f"Dodano {nazwa}!"); st.rerun()
 
-                # --- FORMULARZ DLA PALIWA (Z SUWAKAMI) ---
                 else: 
-                    # Zwykły kontener (bez st.form), żeby suwaki działały interaktywnie
                     auto_nazwa = st.text_input("Samochód", value="Auto 1")
                     dystans = st.number_input("Dystans (km)", min_value=0, value=100, step=10)
-                    
                     spalanie = st.slider("Spalanie (l/100km)", 1.0, 20.0, 8.0, step=0.1)
                     cena_paliwa = st.slider("Cena paliwa (PLN/l)", 3.0, 10.0, 6.50, step=0.01)
-                    
                     koszt_trasy = (dystans / 100) * spalanie * cena_paliwa
                     st.markdown(f"**Wyliczony koszt:** :red[{koszt_trasy:.2f} PLN]")
                     
@@ -529,22 +504,16 @@ with tab_edytor:
                         st.session_state.db = updated_df
                         st.success(f"Dodano {auto_nazwa}!"); st.rerun()
 
-        # PRAWA KOLUMNA: TABELA
         with col_table:
             with st.container(border=True):
                 st.subheader("📋 Baza kosztów wspólnych")
                 mask_wspolne = st.session_state.db['Typ_Kosztu'].isin(['Wspólny', 'Paliwo'])
                 df_wspolne = st.session_state.db[mask_wspolne]
-                
                 if not df_wspolne.empty:
                     cols_to_show = ['Tytuł', 'Kategoria', 'Koszt']
-                    
                     event = st.dataframe(
                         df_wspolne[cols_to_show], 
-                        use_container_width=True, 
-                        hide_index=True, 
-                        selection_mode="multi-row", 
-                        on_select="rerun", 
+                        use_container_width=True, hide_index=True, selection_mode="multi-row", on_select="rerun", 
                         column_config={"Koszt": st.column_config.NumberColumn("Koszt Całkowity", format="%.2f zł")}
                     )
                     if event.selection.rows:
@@ -560,17 +529,12 @@ with tab_edytor:
 
 # --- TAB 2: KALENDARZ (HYBRID) ---
 with tab_kalendarz:
-    # GÓRNA BELKA (TOGGLE + PRZYCISK ODPINANIA)
     col_switch, col_gap, col_btn = st.columns([2, 5, 2])
-    
-    with col_switch:
-        mobile_mode = st.toggle("📱 Widok Mobilny", value=False)
-    
+    with col_switch: mobile_mode = st.toggle("📱 Widok Mobilny", value=False)
     with col_btn:
         if st.button("🗑️ Odepnij", use_container_width=True):
             unpin_dialog()
             
-    # LOGIKA KALENDARZA
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
     mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
@@ -579,7 +543,6 @@ with tab_kalendarz:
         df_events['Start'] = pd.to_datetime(df_events['Start'])
         df_events = df_events.sort_values(by='Start')
         
-    # --- EKSPORT ICS ---
     def create_ics_file(df):
         ics_content = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ZwariowanaPrzygoda//PL", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
         mask = (df['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (df['Typ_Kosztu'] == 'Indywidualny')
@@ -623,7 +586,6 @@ with tab_kalendarz:
                     except: cost_val = 0.0
                     cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>" if cost_val > 0 else ""
                     
-                    # KOLORYSTKA KART W TRYBIE MOBILNYM
                     if cat == "Atrakcja": bg_color = COLOR_ACCENT; text_color = "#faf9dd"
                     elif cat == "Trasa": bg_color = COLOR_SEC; text_color = "#ffffff"
                     elif cat == "Jedzenie": bg_color = COLOR_FOOD; text_color = "#ffffff"
@@ -643,7 +605,6 @@ with tab_kalendarz:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
         
-        # AKTUALIZACJA KOLORÓW NA WYKRESIE
         domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Tło"]
         range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, COLOR_BG] 
         
@@ -661,15 +622,11 @@ with tab_kalendarz:
     
     st.divider()
 
-    # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
-
-    # 1. PRZYBORNIK (LEWO)
     with col_toolbox:
         with st.container(border=True):
             st.subheader("📌 Przybornik")
             c1, c2, c3 = st.columns(3)
-            # AKTUALIZACJA FILTRÓW
             filtry = []
             if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
             if c1.checkbox("Trasa", value=True): filtry.append("Trasa")
@@ -702,25 +659,19 @@ with tab_kalendarz:
                 else: st.warning("Brak elementów w wybranych kategoriach.")
             else: st.success("Pusto!")
 
-    # 2. SZYBKA TRASA (PRAWO)
     with col_route:
         with st.container(border=True):
             st.subheader("🚗 Dodaj Trasę")
-            
             r_tytul = st.text_input("Tytuł trasy (np. Dojazd do Włoch)")
-            
             c_r_data, c_r_godz = st.columns(2)
             with c_r_data: r_data = st.date_input("Kiedy:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days), key="route_date")
             with c_r_godz: r_godz = st.selectbox("O której:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=8, key="route_hour")
-            
             r_czas = st.number_input("Czas trwania (h):", min_value=1.0, step=0.5, value=2.0)
             
             if st.button("Dodaj trasę na mapę", type="primary", use_container_width=True):
                 if r_tytul:
                     with st.spinner("Dodaję trasę..."):
                         start_dt = datetime.combine(r_data, time(r_godz, 0))
-                        
-                        # Tworzymy nowy wpis od razu jako ZAPLANOWANY
                         nowa_trasa = pd.DataFrame([{
                             'Tytuł': r_tytul, 
                             'Kategoria': 'Trasa', 
@@ -731,14 +682,12 @@ with tab_kalendarz:
                             'Koszt': 0.0, 
                             'Typ_Kosztu': 'Indywidualny' 
                         }])
-                        
                         updated_df = pd.concat([st.session_state.db, nowa_trasa], ignore_index=True)
                         csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                         update_file(repo, data_file, csv_buffer.getvalue())
                         st.session_state.db = updated_df
                         st.success(f"Dodano trasę: {r_tytul}"); st.rerun()
-                else:
-                    st.error("Wpisz tytuł trasy!")
+                else: st.error("Wpisz tytuł trasy!")
 
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
@@ -769,41 +718,26 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # ZAKTUALIZOWANA PALETA WYKRESU KOŁOWEGO
-                # Kolejność w range musi odpowiadać potencjalnym kategoriom
-                # Używamy sprytnego mapowania Altair
+                # ZAKTUALIZOWANA PALETA WYKRESU KOŁOWEGO (TYLKO ATRAKCJE vs RESZTA)
                 pie_scale = alt.Scale(
-                    domain=["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Nocleg", "Wynajem Busa", "Winiety", "Inne", "Paliwo"],
-                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "gray", "gray", "gray", "gray", "gray"]
+                    domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
+                    range=[COLOR_ACCENT, COLOR_SEC, "#888888", "#888888", "#888888", "#888888"]
                 )
                 
-                # Baza wykresu
                 base = alt.Chart(df_pie).encode(
                     theta=alt.Theta("Wartość", stack=True)
                 )
-                
-                # 1. Warstwa Wycinków (Donut)
                 pie = base.mark_arc(innerRadius=50).encode(
                     color=alt.Color("Kategoria", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT)),
-                    order=alt.Order("Kategoria"), # Ważne dla kolejności
+                    order=alt.Order("Kategoria"), 
                     tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
                 )
-                
-                # 2. Warstwa Tła Etykiet (Trick: Wielka kropka "●")
                 labels_bg = base.mark_text(radius=120, size=60).encode(
-                    text=alt.value("●"),       # Znak kropki jako tło
-                    color=alt.value("#1e2630"), # Ciemne tło 
-                    opacity=alt.value(0.6),    # Lekka przezroczystość
-                    order=alt.Order("Kategoria")
+                    text=alt.value("●"), color=alt.value("#1e2630"), opacity=alt.value(0.6), order=alt.Order("Kategoria")
                 )
-                
-                # 3. Warstwa Etykiet (Właściwe procenty)
                 labels_text = base.mark_text(radius=120, size=14, fontWeight="bold").encode(
-                    text=alt.Text("Procent", format=".0%"),
-                    order=alt.Order("Kategoria"),
-                    color=alt.value(COLOR_TEXT) 
+                    text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT) 
                 )
-                
                 st.altair_chart(pie + labels_bg + labels_text, use_container_width=True)
             else: st.caption("Brak danych.")
             
