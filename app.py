@@ -275,6 +275,38 @@ def save_manager_dialog():
                 st.success("Usunięto."); st.rerun()
 
 # ==========================================
+# 🗑️ DIALOG: ODPINANIE (NOWY)
+# ==========================================
+@st.dialog("🗑️ Odepnij z kalendarza")
+def unpin_dialog():
+    st.write("Wybierz wydarzenie, które chcesz zdjąć z planu (trafi z powrotem do Edytora).")
+    
+    mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+    zaplanowane = st.session_state.db[mask_zap]
+    
+    if not zaplanowane.empty:
+        zaplanowane_sorted = zaplanowane.sort_values(by='Start')
+        opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
+        
+        wybrany_op = st.selectbox("Wybierz wydarzenie:", opcje)
+        
+        if wybrany_op:
+            orig_tytul = zaplanowane_sorted.iloc[opcje.index(wybrany_op)]['Tytuł']
+            
+            st.warning(f"Czy na pewno chcesz odpiąć: **{orig_tytul}**?")
+            
+            if st.button("Tak, odepnij", type="primary", use_container_width=True):
+                with st.spinner("Aktualizuję..."):
+                    idx = st.session_state.db[st.session_state.db['Tytuł'] == orig_tytul].index[0]
+                    st.session_state.db.at[idx, 'Zaplanowane'] = False
+                    st.session_state.db.at[idx, 'Start'] = None
+                    csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                    update_file(repo, data_file, csv_buffer.getvalue())
+                    st.rerun()
+    else:
+        st.info("Kalendarz jest pusty. Nie ma czego odpinać.")
+
+# ==========================================
 # ⚙️ DIALOG KONFIGURACJI
 # ==========================================
 @st.dialog("⚙️ Konfiguracja Wyjazdu")
@@ -368,11 +400,11 @@ def generuj_tlo_widoku(start_date, num_days):
     return pd.DataFrame(tlo_data)
 
 # ==========================================
-# 📑 GŁÓWNE ZAKŁADKI (ZREDUKOWANE)
+# 📑 GŁÓWNE ZAKŁADKI
 # ==========================================
 tab_edytor, tab_kalendarz, tab_podsumowanie = st.tabs(["📝 Edytor", "📅 Kalendarz", "💰 Podsumowanie"])
 
-# --- TAB 1: EDYTOR (SCALONY) ---
+# --- TAB 1: EDYTOR (SCALONY + SUWAKI PALIWA) ---
 with tab_edytor:
     # Przełącznik trybu na górze
     editor_mode = st.radio(
@@ -387,37 +419,34 @@ with tab_edytor:
     # === TRYB 1: AKTYWNOŚCI ===
     if editor_mode == "🏃 Aktywności (Indywidualne)":
         col_a, col_b = st.columns([1, 1.5]) 
-        
         with col_a:
             with st.container(border=True):
                 st.subheader("➕ Dodaj aktywność")
                 with st.form("dodawanie_form", clear_on_submit=True):
-                    tytul = st.text_input("Tytuł (np. Muzeum, Obiad)")
-                    
-                    c_kat, c_czas, c_koszt = st.columns([1.5, 1, 1])
-                    with c_kat: kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
-                    with c_czas: czas = st.number_input("h", min_value=1.0, step=0.5, value=1.0, help="Czas trwania") 
-                    with c_koszt: koszt = st.number_input("PLN", min_value=0.0, step=10.0, value=0.0, help="Koszt")
-                    
-                    submit = st.form_submit_button("Zapisz", type="primary", use_container_width=True)
+                    tytul = st.text_input("Tytuł")
+                    kat = st.selectbox("Kategoria", ["Atrakcja", "Trasa", "Odpoczynek"]) 
+                    c1, c2 = st.columns(2)
+                    with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
+                    with c2: koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
+                    submit = st.form_submit_button("Zapisz", type="primary")
 
-                if submit and tytul:
-                    with st.spinner("Zapisuję..."):
-                        nowy = pd.DataFrame([{
-                            'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
-                            'Start': None, 'Koniec': None, 'Zaplanowane': False,
-                            'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
-                        }])
-                        updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
-                        csv_buffer = io.StringIO()
-                        updated_df.to_csv(csv_buffer, index=False)
-                        update_file(repo, data_file, csv_buffer.getvalue())
-                        st.session_state.db = updated_df
-                        st.success(f"Dodano '{tytul}'!"); st.rerun()
+            if submit and tytul:
+                with st.spinner("Zapisuję..."):
+                    nowy = pd.DataFrame([{
+                        'Tytuł': tytul, 'Kategoria': kat, 'Czas (h)': float(czas), 
+                        'Start': None, 'Koniec': None, 'Zaplanowane': False,
+                        'Koszt': float(koszt), 'Typ_Kosztu': 'Indywidualny' 
+                    }])
+                    updated_df = pd.concat([st.session_state.db, nowy], ignore_index=True)
+                    csv_buffer = io.StringIO()
+                    updated_df.to_csv(csv_buffer, index=False)
+                    update_file(repo, data_file, csv_buffer.getvalue())
+                    st.session_state.db = updated_df
+                    st.success(f"Dodano '{tytul}'!"); st.rerun()
 
         with col_b:
             with st.container(border=True):
-                st.subheader("📦 Giełda pomysłów")
+                st.subheader("📦 Giełda pomysłów (Poczekalnia)")
                 mask_niezaplanowane = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & \
                                       (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
                 do_pokazania = st.session_state.db[mask_niezaplanowane]
@@ -425,13 +454,10 @@ with tab_edytor:
                 if not do_pokazania.empty:
                     event = st.dataframe(
                         do_pokazania[['Tytuł', 'Kategoria', 'Czas (h)', 'Koszt']], 
-                        use_container_width=True, 
-                        on_select="rerun", 
-                        selection_mode="multi-row", 
-                        hide_index=True
+                        use_container_width=True, on_select="rerun", selection_mode="multi-row", hide_index=True
                     )
                     if event.selection.rows:
-                        if st.button("🗑️ Usuń zaznaczone trwale", type="primary", use_container_width=True):
+                        if st.button("🗑️ Usuń zaznaczone trwale", type="primary"):
                             with st.spinner("Usuwam..."):
                                 indeksy = do_pokazania.iloc[event.selection.rows].index
                                 updated_df = st.session_state.db.drop(indeksy).reset_index(drop=True)
@@ -439,8 +465,7 @@ with tab_edytor:
                                 update_file(repo, data_file, csv_buffer.getvalue())
                                 st.session_state.db = updated_df
                                 st.rerun()
-                else: 
-                    st.caption("Tutaj trafią atrakcje, które dodasz, ale jeszcze nie przypiszesz do kalendarza.")
+                else: st.info("Brak nieprzypisanych elementów. Dodaj coś po lewej!")
 
     # === TRYB 2: KOSZTY WSPÓLNE ===
     else:
@@ -532,9 +557,17 @@ with tab_edytor:
 
 # --- TAB 2: KALENDARZ (HYBRID) ---
 with tab_kalendarz:
-    col_switch, _ = st.columns([1, 4])
-    with col_switch: mobile_mode = st.toggle("📱 Widok Mobilny (Lista)", value=False)
+    # GÓRNA BELKA (TOGGLE + PRZYCISK ODPINANIA)
+    col_switch, col_gap, col_btn = st.columns([2, 5, 2])
     
+    with col_switch:
+        mobile_mode = st.toggle("📱 Widok Mobilny", value=False)
+    
+    with col_btn:
+        if st.button("🗑️ Odepnij", use_container_width=True):
+            unpin_dialog()
+            
+    # LOGIKA KALENDARZA
     current_start_date = st.session_state.config_start_date
     current_days = st.session_state.config_days
     mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
@@ -616,60 +649,39 @@ with tab_kalendarz:
         st.altair_chart(final_chart)
     
     st.divider()
-    col_tools_left, col_tools_right = st.columns([1, 1])
-    with col_tools_left:
-        with st.container(border=True): # Ramka dla Przybornika
-            st.subheader("📌 Przybornik")
-            c1, c2, c3 = st.columns(3)
-            filtry = []
-            if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
-            if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
-            if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
-            mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-            niezaplanowane = st.session_state.db[mask_przyb]
-            if not niezaplanowane.empty:
-                filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
-                if not filtrowane_df.empty:
-                    opcje = filtrowane_df['Tytuł'].tolist()
-                    wybrany = st.selectbox("Wybierz element:", opcje)
-                    info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
-                    st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
-                    cd, ch = st.columns(2)
-                    with cd: wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
-                    with ch: wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
-                    if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
-                        with st.spinner("Aktualizuję..."):
-                            start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
-                            idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
-                            st.session_state.db.at[idx, 'Start'] = start_dt
-                            st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
-                            st.session_state.db.at[idx, 'Zaplanowane'] = True
-                            csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
-                            update_file(repo, data_file, csv_buffer.getvalue())
-                            st.success("Zapisano!"); st.rerun()
-                else: st.warning("Brak elementów.")
-            else: st.success("Pusto!")
 
-    with col_tools_right:
-        with st.container(border=True): # Ramka dla Zdejmowania
-            st.subheader("🗑️ Odepnij")
-            mask_zap = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-            zaplanowane = st.session_state.db[mask_zap]
-            if not zaplanowane.empty:
-                zaplanowane_sorted = zaplanowane.sort_values(by='Start')
-                opcje = zaplanowane_sorted.apply(lambda x: f"{x['Tytuł']} ({x['Start'].strftime('%d.%m %H:%M')})", axis=1).tolist()
-                wybrany_op = st.selectbox("Element:", opcje)
-                if wybrany_op:
-                    orig_tytul = zaplanowane_sorted.iloc[opcje.index(wybrany_op)]['Tytuł']
-                    if st.button("↩️ Wróć do poczekalni", use_container_width=True):
-                        with st.spinner("Zdejmuję..."):
-                            idx = st.session_state.db[st.session_state.db['Tytuł'] == orig_tytul].index[0]
-                            st.session_state.db.at[idx, 'Zaplanowane'] = False
-                            st.session_state.db.at[idx, 'Start'] = None
-                            csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
-                            update_file(repo, data_file, csv_buffer.getvalue())
-                            st.rerun()
-            else: st.info("Kalendarz pusty.")
+    # --- PRZYBORNIK (TERAZ NA PEŁNĄ SZEROKOŚĆ) ---
+    with st.container(border=True):
+        st.subheader("📌 Przybornik")
+        c1, c2, c3 = st.columns(3)
+        filtry = []
+        if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
+        if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
+        if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
+        mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+        niezaplanowane = st.session_state.db[mask_przyb]
+        if not niezaplanowane.empty:
+            filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
+            if not filtrowane_df.empty:
+                opcje = filtrowane_df['Tytuł'].tolist()
+                wybrany = st.selectbox("Wybierz element:", opcje)
+                info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
+                st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
+                cd, ch = st.columns(2)
+                with cd: wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
+                with ch: wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
+                if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
+                    with st.spinner("Aktualizuję..."):
+                        start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
+                        idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
+                        st.session_state.db.at[idx, 'Start'] = start_dt
+                        st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
+                        st.session_state.db.at[idx, 'Zaplanowane'] = True
+                        csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                        update_file(repo, data_file, csv_buffer.getvalue())
+                        st.success("Zapisano!"); st.rerun()
+            else: st.warning("Brak elementów.")
+        else: st.success("Pusto!")
 
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
