@@ -609,14 +609,13 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-  # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE & FULL DAYS) ---
+ # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE FIXED) ---
     else:
-        # 1. Generujemy listę WSZYSTKICH dni wyjazdu (żeby pokazać też te puste)
+        # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
-        # Formatujemy tak samo jak w danych (Dzień.Miesiąc NazwaDnia)
         all_days_labels = [d.strftime('%d.%m %A') for d in all_dates]
         
-        # 2. Pobieramy dane wydarzeń
+        # 2. Pobieramy dane
         mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         df_chart = st.session_state.db[mask].copy()
@@ -627,48 +626,49 @@ with tab_kalendarz:
 
         st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
 
-        # Jeśli są dane, formatujemy je
+        # Przygotowanie danych
         if not df_chart.empty:
             df_chart['Start'] = pd.to_datetime(df_chart['Start'])
             df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
         
-        # Nawet jak df_chart jest pusty, musimy stworzyć wykres, żeby pokazać puste kolumny dni
-        # Tworzymy bazę wykresu
+        # Baza wykresu (nawet dla pustych dni)
         base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
 
-        # 3. Rysujemy Paski Wydarzeń (tylko jeśli są dane)
+        # 3. Rysujemy Paski (Fixed Width = Naprawa błędu)
         if not df_chart.empty:
             bars = base_chart.mark_bar(
                 cornerRadius=4,
-                width=alt.Step(0.9) # Szerokość kolumny względem dostępnego miejsca (0.9 = mały odstęp)
+                width=60  # SZTYWNA SZEROKOŚĆ (Naprawia błąd SchemaValidationError)
             ).encode(
-                # Oś X: Dni (Wymuszamy pokazanie wszystkich dni z all_days_labels)
+                # Oś X: Dni
                 x=alt.X('Day_Label:N', 
                         title=None, 
-                        scale=alt.Scale(domain=all_days_labels), # TO KLUCZ: Pokazuje wszystkie dni
+                        # domain=all_days_labels -> Pokazuje wszystkie dni
+                        # paddingInner=0.05 -> Minimalne odstępy między kolumnami
+                        scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
                         axis=alt.Axis(
                             labelColor=COLOR_TEXT, # Kremowe napisy
                             labelFontSize=12, 
                             labelFontWeight="bold", 
                             labelAngle=0,
                             orient='top', # Dni na górze
-                            domainColor=COLOR_TEXT,
-                            tickColor=COLOR_TEXT
+                            domainColor=COLOR_BG, # Ukrycie linii osi
+                            tickColor=COLOR_BG
                         )
                 ),
-                # Oś Y: Czas (Ciemne tło, jasne linie)
+                # Oś Y: Czas
                 y=alt.Y('hoursminutes(Start):T', 
                         title=None,
                         scale=alt.Scale(reverse=True), # 00:00 u góry
                         axis=alt.Axis(
                             format='%H:%M', 
-                            labelColor=COLOR_TEXT, # Kremowe godziny
+                            labelColor=COLOR_TEXT, 
                             grid=True, 
-                            gridColor="#444444", # Delikatna szara siatka
+                            gridColor="#444444", 
                             gridOpacity=0.3,
                             domain=False,
-                            tickColor=COLOR_TEXT
+                            tickColor=COLOR_BG
                         )
                 ),
                 y2='hoursminutes(Koniec):T',
@@ -680,7 +680,7 @@ with tab_kalendarz:
             # Tekst (Tytuły)
             text = bars.mark_text(
                 align='center', baseline='middle', dy=-10,
-                color='white', fontWeight='bold', fontSize=11, limit=90
+                color='white', fontWeight='bold', fontSize=10, limit=55
             ).encode(text='Tytuł')
             
             # Tekst (Godziny)
@@ -693,15 +693,15 @@ with tab_kalendarz:
         else:
             # Pusty wykres (tylko siatka dni)
             final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
-                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
+                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
             )
 
-        # Finalna konfiguracja wyglądu
+        # Finalna konfiguracja
         final_chart = final_chart.properties(
             height=800, 
-            background=COLOR_BG # Ciemne tło całego kontenera
+            background=COLOR_BG # Ciemne tło (Gunmetal)
         ).configure_view(
-            stroke=COLOR_BG, # Brak ramki (lub ramka w kolorze tła)
+            stroke=COLOR_BG,
             strokeWidth=0
         )
 
