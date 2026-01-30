@@ -815,11 +815,10 @@ with tab_podsumowanie:
         with st.container(border=True):
             st.markdown("#### Struktura kosztów")
             
-            # 1. AGREGACJA DO WYKRESU KOŁOWEGO (POWRÓT DO WERSJI OGÓLNEJ)
-            # Wszystkie indywidualne wpadają do worka "Atrakcje"
+            # 1. AGREGACJA: Indywidualne -> "Atrakcje"
             pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
             
-            # Dodanie kosztów wspólnych (dzielonych na osobę)
+            # 2. AGREGACJA: Koszty wspólne -> Orginalne kategorie (Nocleg, Trasa etc.)
             if not df_B.empty:
                 grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
                 for _, row in grouped_B.iterrows(): 
@@ -830,11 +829,18 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # PALETA DLA WYKRESU KOŁOWEGO (PROSTA)
-                # Atrakcje = Czerwony, Trasa = Niebieski, Reszta = Szary
+                # --- DEFINICJA KOLORÓW DLA KOŁA ---
+                # Przypisujemy konkretne zmienne kolorów do kategorii
                 pie_scale = alt.Scale(
                     domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
-                    range=[COLOR_ACCENT, COLOR_SEC, "#888888", "#888888", "#888888", "#888888"]
+                    range=[
+                        COLOR_ACCENT, # Atrakcje (Czerwony)
+                        COLOR_SEC,    # Trasa/Paliwo (Niebieski)
+                        COLOR_SPORT,  # Nocleg (Złoty - wygląda "premium")
+                        COLOR_PARTY,  # Wynajem Busa (Fioletowy)
+                        COLOR_FOOD,   # Winiety (Oliwkowy)
+                        "#888888"     # Inne (Szary)
+                    ]
                 )
                 
                 base = alt.Chart(df_pie).encode(
@@ -875,14 +881,14 @@ with tab_podsumowanie:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
-                # DANE DO WYKRESU SŁUPKOWEGO (SZCZEGÓŁOWE)
+                # DANE DO WYKRESU SŁUPKOWEGO
                 df_A['Data_Group'] = df_A['Start'].dt.date
                 df_A['Etykieta'] = df_A['Start'].dt.strftime('%d.%m')
                 df_A['Day_Sort'] = df_A['Data_Group'].astype(str)
                 
-                # Paleta szczegółowa (taka jak w Kalendarzu)
-                domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
-                range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
+                # Paleta szczegółowa dla słupków
+                domain_bar = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
+                range_bar = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
                 # Baza
                 base = alt.Chart(df_A).encode(
@@ -893,14 +899,14 @@ with tab_podsumowanie:
                     )
                 )
 
-                # Warstwa 1: Skumulowane słupki (Stacked Bars)
+                # Warstwa 1: Skumulowane słupki
                 bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                     y=alt.Y('sum(Koszt):Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, gridColor="#444444", gridOpacity=0.3)),
-                    color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=alt.Legend(orient="bottom", title=None, labelColor=COLOR_TEXT)),
+                    color=alt.Color('Kategoria', scale=alt.Scale(domain=domain_bar, range=range_bar), legend=alt.Legend(orient="bottom", title=None, labelColor=COLOR_TEXT)),
                     tooltip=['Etykieta', 'Kategoria', alt.Tooltip('sum(Koszt)', title='Kwota', format='.0f')]
                 )
 
-                # Warstwa 2: Suma całkowita nad słupkiem
+                # Warstwa 2: Suma całkowita
                 daily_totals = df_A.groupby(['Etykieta', 'Day_Sort'])['Koszt'].sum().reset_index()
                 
                 text_totals = alt.Chart(daily_totals).mark_text(
