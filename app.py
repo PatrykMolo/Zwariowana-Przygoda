@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
- # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE FIXED) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - SCROLLABLE) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -624,7 +624,24 @@ with tab_kalendarz:
         domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
         range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
-        st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
+        # CSS wymuszający pasek przewijania na kontenerze wykresu
+        st.markdown(
+            """
+            <style>
+            [data-testid="stAltairChart"] {
+                overflow-x: auto !important;
+                padding-bottom: 20px;
+            }
+            </style>
+            """, 
+            unsafe_allow_html=True
+        )
+
+        # OBLICZANIE SZEROKOŚCI:
+        # Każdy dzień dostaje 120 pikseli szerokości. 
+        # Jeśli dni jest mało, bierzemy minimum 600px, żeby nie był za wąski na komputerze.
+        # Jeśli dni jest dużo, wykres wyjdzie poza ekran i pojawi się scroll.
+        calc_width = max(len(all_days_labels) * 120, 600)
 
         # Przygotowanie danych
         if not df_chart.empty:
@@ -632,35 +649,31 @@ with tab_kalendarz:
             df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
         
-        # Baza wykresu (nawet dla pustych dni)
+        # Baza wykresu
         base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
 
-        # 3. Rysujemy Paski (Fixed Width = Naprawa błędu)
+        # 3. Rysujemy Paski
         if not df_chart.empty:
             bars = base_chart.mark_bar(
                 cornerRadius=4,
-                width=60  # SZTYWNA SZEROKOŚĆ (Naprawia błąd SchemaValidationError)
+                width=60  # Szerokość paska aktywności (wewnątrz kolumny dnia 120px)
             ).encode(
-                # Oś X: Dni
                 x=alt.X('Day_Label:N', 
                         title=None, 
-                        # domain=all_days_labels -> Pokazuje wszystkie dni
-                        # paddingInner=0.05 -> Minimalne odstępy między kolumnami
                         scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
                         axis=alt.Axis(
-                            labelColor=COLOR_TEXT, # Kremowe napisy
-                            labelFontSize=12, 
+                            labelColor=COLOR_TEXT, 
+                            labelFontSize=13, 
                             labelFontWeight="bold", 
-                            labelAngle=0,
-                            orient='top', # Dni na górze
-                            domainColor=COLOR_BG, # Ukrycie linii osi
+                            labelAngle=0, # Proste napisy
+                            orient='top', 
+                            domainColor=COLOR_BG, 
                             tickColor=COLOR_BG
                         )
                 ),
-                # Oś Y: Czas
                 y=alt.Y('hoursminutes(Start):T', 
                         title=None,
-                        scale=alt.Scale(reverse=True), # 00:00 u góry
+                        scale=alt.Scale(reverse=True), 
                         axis=alt.Axis(
                             format='%H:%M', 
                             labelColor=COLOR_TEXT, 
@@ -672,18 +685,15 @@ with tab_kalendarz:
                         )
                 ),
                 y2='hoursminutes(Koniec):T',
-                
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
                 tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
             )
 
-            # Tekst (Tytuły)
             text = bars.mark_text(
                 align='center', baseline='middle', dy=-10,
                 color='white', fontWeight='bold', fontSize=10, limit=55
             ).encode(text='Tytuł')
             
-            # Tekst (Godziny)
             text_time = bars.mark_text(
                 align='center', baseline='middle', dy=5,
                 color='white', opacity=0.8, fontSize=9
@@ -691,21 +701,24 @@ with tab_kalendarz:
 
             final_chart = (bars + text + text_time)
         else:
-            # Pusty wykres (tylko siatka dni)
             final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
                 x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
             )
 
-        # Finalna konfiguracja
+        # Finalna konfiguracja z SZTYWNĄ SZEROKOŚCIĄ
         final_chart = final_chart.properties(
             height=800, 
-            background=COLOR_BG # Ciemne tło (Gunmetal)
+            width=calc_width, # <--- Tu jest magia przewijania
+            background=COLOR_BG
         ).configure_view(
             stroke=COLOR_BG,
             strokeWidth=0
         )
 
-        st.altair_chart(final_chart, use_container_width=True)
+        # use_container_width=False pozwala wyjechać poza ekran
+        st.altair_chart(final_chart, use_container_width=False)
+
+    
     # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
 
