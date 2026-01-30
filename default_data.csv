@@ -10,7 +10,7 @@ Winiety Citroen,Winiety,0.0,,,False,235.0,Wspólny
 Turda-Cartisoara,Trasa,3.0,2026-07-25 18:00:00,2026-07-25 21:00:00,True,0.0,Indywidualny
 Transfagarasan,Atrakcja,3.0,2026-07-26 08:00:00,2026-07-26 11:00:00,True,0.0,Indywidualny
 Transfagarasan-Balchik,Trasa,6.0,2026-07-26 11:00:00,2026-07-26 17:00:00,True,0.0,Indywidualny
-Kraków - Turda,Trasa,10.0,2026-08-01 10:00:00,2026-08-01 20:00:00,True,0.0,Indywidualny
+Kraków - Turda,Trasa,10.0,,2026-08-01 20:00:00,False,0.0,Indywidualny
 Mlody,Atrakcja,4.0,2026-07-30 00:00:00,2026-07-30 04:00:00,True,30.0,Indywidualny
 Majtowanie żuka ,Atrakcja,10.0,2026-07-31 08:00:00,2026-07-31 18:00:00,True,0.0,Indywidualny
 Cevapy,Jedzenie,1.0,2026-07-29 23:00:00,2026-07-30 00:00:00,True,20.0,Indywidualny
