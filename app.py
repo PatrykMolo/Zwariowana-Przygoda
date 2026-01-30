@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX 24H) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE + FIX PUSTEGO EKRANU) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -638,7 +638,7 @@ with tab_kalendarz:
 
         calc_width = max(len(all_days_labels) * 120, 600)
 
-        # Definiujemy sztywny zakres doby dla osi Y (Data nie ma znaczenia, liczy się czas)
+        # Definiujemy sztywny zakres doby (dla Y)
         y_min = datetime(2000, 1, 1, 0, 0, 0)
         y_max = datetime(2000, 1, 1, 23, 59, 59)
 
@@ -651,7 +651,7 @@ with tab_kalendarz:
             for _, row in df_raw.iterrows():
                 s = row['Start']
                 e = row['Koniec']
-                
+                # Pętla cięcia
                 while s.date() < e.date():
                     end_of_day = datetime.combine(s.date(), time(23, 59, 59))
                     segment = row.copy()
@@ -664,48 +664,52 @@ with tab_kalendarz:
                 last_segment['Start'] = s
                 last_segment['Koniec'] = e
                 chart_rows.append(last_segment)
-                
+            
             df_chart = pd.DataFrame(chart_rows)
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
         else:
-            df_chart = pd.DataFrame()
+            df_chart = pd.DataFrame(columns=['Start', 'Koniec', 'Tytuł', 'Kategoria', 'Day_Label'])
 
-        # Baza wykresu
-        base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
+        # --- GLÓWNA POPRAWKA: WARSTWA TŁA (GRID) ---
+        # Tworzymy "pustą" ramkę ze wszystkimi dniami, żeby wymusić narysowanie kolumn
+        # Dodajemy sztuczną kolumnę 'Start' tylko po to, by Altair wiedział jak ustawić oś Y
+        bg_data = pd.DataFrame({'Day_Label': all_days_labels})
+        bg_data['Start'] = y_min # Dummy data dla skali Y
+        
+        # 1. Rysujemy samą siatkę (Grid) na bazie pustych danych
+        base_grid = alt.Chart(bg_data).mark_rect(opacity=0).encode(
+            x=alt.X('Day_Label:N', 
+                    title=None, 
+                    scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
+                    axis=alt.Axis(
+                        labelColor=COLOR_TEXT, 
+                        labelFontSize=13, 
+                        labelFontWeight="bold", 
+                        labelAngle=0, 
+                        orient='top', 
+                        domainColor=COLOR_BG, 
+                        tickColor=COLOR_BG
+                    )
+            ),
+            y=alt.Y('hoursminutes(Start):T',
+                    scale=alt.Scale(reverse=True, domain=[y_min, y_max]), # SZTYWNA SKALA
+                    axis=alt.Axis(
+                        format='%H:%M', 
+                        labelColor=COLOR_TEXT, 
+                        grid=True, 
+                        gridColor="#444444", 
+                        gridOpacity=0.3, 
+                        domain=False, 
+                        tickColor=COLOR_BG
+                    )
+            )
+        )
 
-        # 3. Rysujemy Paski
+        # 2. Rysujemy Paski (Jeśli są dane)
         if not df_chart.empty:
-            bars = base_chart.mark_bar(
-                cornerRadius=4,
-                width=60 
-            ).encode(
-                x=alt.X('Day_Label:N', 
-                        title=None, 
-                        scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
-                        axis=alt.Axis(
-                            labelColor=COLOR_TEXT, 
-                            labelFontSize=13, 
-                            labelFontWeight="bold", 
-                            labelAngle=0, 
-                            orient='top', 
-                            domainColor=COLOR_BG, 
-                            tickColor=COLOR_BG
-                        )
-                ),
-                y=alt.Y('hoursminutes(Start):T', 
-                        title=None,
-                        # FIX: Sztywny zakres (domain) od 00:00 do 23:59
-                        scale=alt.Scale(reverse=True, domain=[y_min, y_max]), 
-                        axis=alt.Axis(
-                            format='%H:%M', 
-                            labelColor=COLOR_TEXT, 
-                            grid=True, 
-                            gridColor="#444444", 
-                            gridOpacity=0.3,
-                            domain=False,
-                            tickColor=COLOR_BG
-                        )
-                ),
+            bars = alt.Chart(df_chart).mark_bar(cornerRadius=4, width=60).encode(
+                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05)),
+                y=alt.Y('hoursminutes(Start):T', scale=alt.Scale(reverse=True, domain=[y_min, y_max])),
                 y2='hoursminutes(Koniec):T',
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
                 tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
@@ -720,14 +724,11 @@ with tab_kalendarz:
                 align='center', baseline='middle', dy=5,
                 color='white', opacity=0.8, fontSize=9
             ).encode(text=alt.Text('hoursminutes(Start):T', format='%H:%M'))
-
-            final_chart = (bars + text + text_time)
+            
+            final_chart = (base_grid + bars + text + text_time)
         else:
-            # Pusty wykres (dla samej siatki) - tutaj też musimy wymusić skalę Y
-            final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
-                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top')),
-                y=alt.Y(field='dummy', type='temporal', scale=alt.Scale(reverse=True, domain=[y_min, y_max]), axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, grid=True, gridColor="#444444", gridOpacity=0.3))
-            )
+            # Jeśli brak danych, wyświetlamy samą siatkę
+            final_chart = base_grid
 
         # Finalna konfiguracja
         final_chart = final_chart.properties(
