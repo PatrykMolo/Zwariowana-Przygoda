@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - SCROLLABLE) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX PÓŁNOCY) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -618,13 +618,12 @@ with tab_kalendarz:
         # 2. Pobieramy dane
         mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-        df_chart = st.session_state.db[mask].copy()
+        df_raw = st.session_state.db[mask].copy()
 
         # Paleta kolorów
         domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
         range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
-        # CSS wymuszający pasek przewijania na kontenerze wykresu
         st.markdown(
             """
             <style>
@@ -637,18 +636,43 @@ with tab_kalendarz:
             unsafe_allow_html=True
         )
 
-        # OBLICZANIE SZEROKOŚCI:
-        # Każdy dzień dostaje 120 pikseli szerokości. 
-        # Jeśli dni jest mało, bierzemy minimum 600px, żeby nie był za wąski na komputerze.
-        # Jeśli dni jest dużo, wykres wyjdzie poza ekran i pojawi się scroll.
         calc_width = max(len(all_days_labels) * 120, 600)
 
-        # Przygotowanie danych
-        if not df_chart.empty:
-            df_chart['Start'] = pd.to_datetime(df_chart['Start'])
-            df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
+        # --- LOGIKA CIĘCIA PRZEZ PÓŁNOC (FIX) ---
+        chart_rows = []
+        if not df_raw.empty:
+            df_raw['Start'] = pd.to_datetime(df_raw['Start'])
+            df_raw['Koniec'] = pd.to_datetime(df_raw['Koniec'])
+            
+            for _, row in df_raw.iterrows():
+                s = row['Start']
+                e = row['Koniec']
+                
+                # Jeśli wydarzenie kończy się w innym dniu niż zaczyna
+                while s.date() < e.date():
+                    # Tworzymy segment do końca bieżącego dnia (23:59:59)
+                    end_of_day = datetime.combine(s.date(), time(23, 59, 59))
+                    
+                    segment = row.copy()
+                    segment['Start'] = s
+                    segment['Koniec'] = end_of_day
+                    chart_rows.append(segment)
+                    
+                    # Przesuwamy start na początek następnego dnia (00:00:00)
+                    s = datetime.combine(s.date() + timedelta(days=1), time(0, 0, 0))
+                
+                # Dodajemy ostatni segment (lub jedyny, jeśli nie przechodziło przez północ)
+                last_segment = row.copy()
+                last_segment['Start'] = s
+                last_segment['Koniec'] = e
+                chart_rows.append(last_segment)
+                
+            df_chart = pd.DataFrame(chart_rows)
+            # Generujemy etykietę dnia PO pocięciu
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
-        
+        else:
+            df_chart = pd.DataFrame()
+
         # Baza wykresu
         base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
 
@@ -656,7 +680,7 @@ with tab_kalendarz:
         if not df_chart.empty:
             bars = base_chart.mark_bar(
                 cornerRadius=4,
-                width=60  # Szerokość paska aktywności (wewnątrz kolumny dnia 120px)
+                width=60 
             ).encode(
                 x=alt.X('Day_Label:N', 
                         title=None, 
@@ -665,7 +689,7 @@ with tab_kalendarz:
                             labelColor=COLOR_TEXT, 
                             labelFontSize=13, 
                             labelFontWeight="bold", 
-                            labelAngle=0, # Proste napisy
+                            labelAngle=0, 
                             orient='top', 
                             domainColor=COLOR_BG, 
                             tickColor=COLOR_BG
@@ -705,19 +729,17 @@ with tab_kalendarz:
                 x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
             )
 
-        # Finalna konfiguracja z SZTYWNĄ SZEROKOŚCIĄ
+        # Finalna konfiguracja
         final_chart = final_chart.properties(
             height=800, 
-            width=calc_width, # <--- Tu jest magia przewijania
+            width=calc_width,
             background=COLOR_BG
         ).configure_view(
             stroke=COLOR_BG,
             strokeWidth=0
         )
 
-        # use_container_width=False pozwala wyjechać poza ekran
         st.altair_chart(final_chart, use_container_width=False)
-
     
     # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
