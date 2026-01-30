@@ -793,7 +793,6 @@ with tab_kalendarz:
                         st.success(f"Dodano trasę: {r_tytul}"); st.rerun()
                 else:
                     st.error("Wpisz tytuł trasy!")
-
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
     with st.container(border=True):
@@ -816,10 +815,11 @@ with tab_podsumowanie:
         with st.container(border=True):
             st.markdown("#### Struktura kosztów")
             
-            # 1. Agregacja wszystkich indywidualnych jako "Atrakcje"
+            # 1. AGREGACJA DO WYKRESU KOŁOWEGO (POWRÓT DO WERSJI OGÓLNEJ)
+            # Wszystkie indywidualne wpadają do worka "Atrakcje"
             pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
             
-            # 2. Dodanie kosztów wspólnych rozbitych na kategorie
+            # Dodanie kosztów wspólnych (dzielonych na osobę)
             if not df_B.empty:
                 grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
                 for _, row in grouped_B.iterrows(): 
@@ -830,10 +830,11 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # NOWA PALETA I DOMENA (NAPRAWIONE)
+                # PALETA DLA WYKRESU KOŁOWEGO (PROSTA)
+                # Atrakcje = Czerwony, Trasa = Niebieski, Reszta = Szary
                 pie_scale = alt.Scale(
-                    domain=["Atrakcja", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne", "Jedzenie", "Impreza", "Sport/Rekreacja"],
-                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "#888888", "#888888", "#888888", "#888888"]
+                    domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
+                    range=[COLOR_ACCENT, COLOR_SEC, "#888888", "#888888", "#888888", "#888888"]
                 )
                 
                 base = alt.Chart(df_pie).encode(
@@ -874,16 +875,16 @@ with tab_podsumowanie:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
-                # Przygotowanie danych
+                # DANE DO WYKRESU SŁUPKOWEGO (SZCZEGÓŁOWE)
                 df_A['Data_Group'] = df_A['Start'].dt.date
                 df_A['Etykieta'] = df_A['Start'].dt.strftime('%d.%m')
                 df_A['Day_Sort'] = df_A['Data_Group'].astype(str)
                 
-                # Paleta kolorów (zgodna z kalendarzem)
+                # Paleta szczegółowa (taka jak w Kalendarzu)
                 domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
                 range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
-                # Baza - wykres
+                # Baza
                 base = alt.Chart(df_A).encode(
                     x=alt.X('Etykieta:O', 
                             title='Dzień', 
@@ -899,7 +900,7 @@ with tab_podsumowanie:
                     tooltip=['Etykieta', 'Kategoria', alt.Tooltip('sum(Koszt)', title='Kwota', format='.0f')]
                 )
 
-                # Warstwa 2: Suma całkowita nad słupkiem (Tekst)
+                # Warstwa 2: Suma całkowita nad słupkiem
                 daily_totals = df_A.groupby(['Etykieta', 'Day_Sort'])['Koszt'].sum().reset_index()
                 
                 text_totals = alt.Chart(daily_totals).mark_text(
