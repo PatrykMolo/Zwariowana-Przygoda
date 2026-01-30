@@ -718,10 +718,12 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # ZAKTUALIZOWANA PALETA WYKRESU KOŁOWEGO (TYLKO ATRAKCJE vs RESZTA)
+                # ZAKTUALIZOWANA PALETA (WSZYSTKIE KATEGORIE)
+                # Atrakcje i Trasa mają swoje główne kolory
+                # Nocleg, Bus, Winiety dostały kolory dodatkowe z palety
                 pie_scale = alt.Scale(
-                    domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
-                    range=[COLOR_ACCENT, COLOR_SEC, "#888888", "#888888", "#888888", "#888888"]
+                    domain=["Atrakcja", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
+                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "#888888"]
                 )
                 
                 base = alt.Chart(df_pie).encode(
