@@ -609,106 +609,103 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-   # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ) ---
+  # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - DARK MODE & FULL DAYS) ---
     else:
-        # Filtrujemy dane
+        # 1. Generujemy listę WSZYSTKICH dni wyjazdu (żeby pokazać też te puste)
+        all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
+        # Formatujemy tak samo jak w danych (Dzień.Miesiąc NazwaDnia)
+        all_days_labels = [d.strftime('%d.%m %A') for d in all_dates]
+        
+        # 2. Pobieramy dane wydarzeń
         mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         df_chart = st.session_state.db[mask].copy()
 
+        # Paleta kolorów
+        domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
+        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
+
+        st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
+
+        # Jeśli są dane, formatujemy je
         if not df_chart.empty:
             df_chart['Start'] = pd.to_datetime(df_chart['Start'])
             df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
-            
-            # Etykiety dni
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
-            df_chart['Day_Sort'] = df_chart['Start'].dt.date.astype(str)
-            
-            # Paleta kolorów
-            domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
-            range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
+        
+        # Nawet jak df_chart jest pusty, musimy stworzyć wykres, żeby pokazać puste kolumny dni
+        # Tworzymy bazę wykresu
+        base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
 
-            st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
-            
-            # 1. BAZA - PASKI WYDARZEŃ (PIONOWE)
-            bars = alt.Chart(df_chart).mark_bar(
+        # 3. Rysujemy Paski Wydarzeń (tylko jeśli są dane)
+        if not df_chart.empty:
+            bars = base_chart.mark_bar(
                 cornerRadius=4,
-                width=80  # Szerokość słupka
+                width=alt.Step(0.9) # Szerokość kolumny względem dostępnego miejsca (0.9 = mały odstęp)
             ).encode(
-                # Oś X: Dni (Na górze - orient='top')
+                # Oś X: Dni (Wymuszamy pokazanie wszystkich dni z all_days_labels)
                 x=alt.X('Day_Label:N', 
                         title=None, 
-                        sort=alt.EncodingSortField(field="Day_Sort", order="ascending"),
+                        scale=alt.Scale(domain=all_days_labels), # TO KLUCZ: Pokazuje wszystkie dni
                         axis=alt.Axis(
-                            labelColor=COLOR_BG, 
+                            labelColor=COLOR_TEXT, # Kremowe napisy
                             labelFontSize=12, 
                             labelFontWeight="bold", 
                             labelAngle=0,
-                            orient='top' # Dni na górze
+                            orient='top', # Dni na górze
+                            domainColor=COLOR_TEXT,
+                            tickColor=COLOR_TEXT
                         )
                 ),
-                # Oś Y: Czas Startu (Odwrócona - 00:00 u góry)
+                # Oś Y: Czas (Ciemne tło, jasne linie)
                 y=alt.Y('hoursminutes(Start):T', 
                         title=None,
-                        scale=alt.Scale(reverse=True), # TO NAPRAWIA BŁĄD (Odwrócenie osi tutaj)
+                        scale=alt.Scale(reverse=True), # 00:00 u góry
                         axis=alt.Axis(
                             format='%H:%M', 
-                            labelColor=COLOR_BG, 
+                            labelColor=COLOR_TEXT, # Kremowe godziny
                             grid=True, 
-                            gridColor="#888888", 
-                            gridOpacity=0.5
+                            gridColor="#444444", # Delikatna szara siatka
+                            gridOpacity=0.3,
+                            domain=False,
+                            tickColor=COLOR_TEXT
                         )
                 ),
-                # Oś Y2: Czas Końca
                 y2='hoursminutes(Koniec):T',
                 
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
                 tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
             )
 
-            # 2. TEKST (Tytuły wewnątrz słupków)
-            text = alt.Chart(df_chart).mark_text(
-                align='center',
-                baseline='middle',
-                dy=-10,
-                color='white',
-                fontWeight='bold',
-                fontSize=11,
-                limit=75
-            ).encode(
-                x=alt.X('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
-                y=alt.Y('hoursminutes(Start):T'),
-                y2='hoursminutes(Koniec):T',
-                text='Tytuł'
-            )
+            # Tekst (Tytuły)
+            text = bars.mark_text(
+                align='center', baseline='middle', dy=-10,
+                color='white', fontWeight='bold', fontSize=11, limit=90
+            ).encode(text='Tytuł')
             
-            # 3. TEKST GODZIN
-            text_time = alt.Chart(df_chart).mark_text(
-                align='center',
-                baseline='middle',
-                dy=5,
-                color='white',
-                opacity=0.8,
-                fontSize=9
-            ).encode(
-                x=alt.X('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
-                y=alt.Y('hoursminutes(Start):T'),
-                y2='hoursminutes(Koniec):T',
-                text=alt.Text('hoursminutes(Start):T', format='%H:%M')
-            )
+            # Tekst (Godziny)
+            text_time = bars.mark_text(
+                align='center', baseline='middle', dy=5,
+                color='white', opacity=0.8, fontSize=9
+            ).encode(text=alt.Text('hoursminutes(Start):T', format='%H:%M'))
 
-            # Składanie wykresu
-            chart = (bars + text + text_time).properties(
-                height=800, 
-                background=COLOR_TEXT # Kremowe tło
-            ).configure_view(
-                strokeWidth=0
-            )
-
-            st.altair_chart(chart, use_container_width=True)
-        
+            final_chart = (bars + text + text_time)
         else:
-            st.info("Kalendarz jest pusty. Dodaj aktywności lub trasę, aby zobaczyć plan.")
+            # Pusty wykres (tylko siatka dni)
+            final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
+                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
+            )
+
+        # Finalna konfiguracja wyglądu
+        final_chart = final_chart.properties(
+            height=800, 
+            background=COLOR_BG # Ciemne tło całego kontenera
+        ).configure_view(
+            stroke=COLOR_BG, # Brak ramki (lub ramka w kolorze tła)
+            strokeWidth=0
+        )
+
+        st.altair_chart(final_chart, use_container_width=True)
     # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
 
