@@ -875,16 +875,51 @@ with tab_podsumowanie:
             else: 
                 st.caption("Brak płatnych atrakcji.")
 
-    with col_right:
+   with col_right:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
+                # Przygotowanie danych
                 df_A['Data_Group'] = df_A['Start'].dt.date
-                daily_costs = df_A.groupby('Data_Group')['Koszt'].sum().reset_index()
-                daily_costs['Etykieta'] = daily_costs['Data_Group'].apply(lambda x: x.strftime('%d.%m'))
-                daily_costs['Sort_Key'] = daily_costs['Data_Group'].astype(str)
-                base_bar = alt.Chart(daily_costs).encode(x=alt.X('Etykieta:O', title='Dzień', sort=alt.EncodingSortField(field="Sort_Key", order="ascending"), axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)), y=alt.Y('Koszt:Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT)))
-                bars = base_bar.mark_bar(color=COLOR_ACCENT, cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(tooltip=[alt.Tooltip('Etykieta', title='Dzień'), alt.Tooltip('Koszt', format='.2f', title='Kwota')])
-                text_bar = base_bar.mark_text(align='center', baseline='bottom', dy=-5, size=12).encode(text=alt.Text('Koszt:Q', format='.0f'), color=alt.value(COLOR_TEXT))
-                st.altair_chart((bars + text_bar).properties(height=550), use_container_width=True)
+                df_A['Etykieta'] = df_A['Start'].dt.strftime('%d.%m')
+                df_A['Day_Sort'] = df_A['Data_Group'].astype(str)
+                
+                # Paleta kolorów (zgodna z kalendarzem)
+                domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
+                range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
+
+                # Baza - wykres
+                base = alt.Chart(df_A).encode(
+                    x=alt.X('Etykieta:O', 
+                            title='Dzień', 
+                            sort=alt.EncodingSortField(field="Day_Sort", order="ascending"), 
+                            axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, grid=False)
+                    )
+                )
+
+                # Warstwa 1: Skumulowane słupki (Stacked Bars)
+                bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                    y=alt.Y('sum(Koszt):Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, gridColor="#444444", gridOpacity=0.3)),
+                    color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=alt.Legend(orient="bottom", title=None, labelColor=COLOR_TEXT)),
+                    tooltip=['Etykieta', 'Kategoria', alt.Tooltip('sum(Koszt)', title='Kwota', format='.0f')]
+                )
+
+                # Warstwa 2: Suma całkowita nad słupkiem (Tekst)
+                # Musimy zgrupować dane, żeby wyświetlić jedną liczbę nad całym stosem
+                daily_totals = df_A.groupby(['Etykieta', 'Day_Sort'])['Koszt'].sum().reset_index()
+                
+                text_totals = alt.Chart(daily_totals).mark_text(
+                    align='center',
+                    baseline='bottom',
+                    dy=-5,
+                    size=12,
+                    color=COLOR_TEXT,
+                    fontWeight='bold'
+                ).encode(
+                    x=alt.X('Etykieta:O', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                    y=alt.Y('Koszt:Q'),
+                    text=alt.Text('Koszt:Q', format='.0f')
+                )
+
+                st.altair_chart((bars + text_totals).properties(height=550), use_container_width=True)
             else: st.info("Zaplanuj płatne atrakcje w kalendarzu, aby zobaczyć wykres czasu.")
