@@ -831,12 +831,9 @@ with tab_podsumowanie:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
                 # NOWA PALETA I DOMENA (NAPRAWIONE)
-                # Atrakcje = Czerwony
-                # Trasa = Niebieski
-                # Reszta (Nocleg, Bus etc.) = Kolory z palety (Oliwka, Fiolet, Złoto)
                 pie_scale = alt.Scale(
-                    domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
-                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "#888888"]
+                    domain=["Atrakcja", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne", "Jedzenie", "Impreza", "Sport/Rekreacja"],
+                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "#888888", "#888888", "#888888", "#888888"]
                 )
                 
                 base = alt.Chart(df_pie).encode(
@@ -849,7 +846,6 @@ with tab_podsumowanie:
                     tooltip=['Kategoria', alt.Tooltip('Wartość', format='.2f')]
                 )
                 
-                # Tło etykiety (kropka)
                 labels_bg = base.mark_text(radius=120, size=60).encode(
                     text=alt.value("●"), 
                     color=alt.value("#1e2630"), 
@@ -857,7 +853,6 @@ with tab_podsumowanie:
                     order=alt.Order("Kategoria")
                 )
                 
-                # Etykieta (procent)
                 labels_text = base.mark_text(radius=120, size=14, fontWeight="bold").encode(
                     text=alt.Text("Procent", format=".0%"), 
                     order=alt.Order("Kategoria"), 
@@ -875,7 +870,7 @@ with tab_podsumowanie:
             else: 
                 st.caption("Brak płatnych atrakcji.")
 
-   with col_right:
+    with col_right:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
@@ -905,7 +900,6 @@ with tab_podsumowanie:
                 )
 
                 # Warstwa 2: Suma całkowita nad słupkiem (Tekst)
-                # Musimy zgrupować dane, żeby wyświetlić jedną liczbę nad całym stosem
                 daily_totals = df_A.groupby(['Etykieta', 'Day_Sort'])['Koszt'].sum().reset_index()
                 
                 text_totals = alt.Chart(daily_totals).mark_text(
