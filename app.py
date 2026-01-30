@@ -609,7 +609,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-    # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ) ---
+   # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ) ---
     else:
         # Filtrujemy dane
         mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
@@ -620,7 +620,7 @@ with tab_kalendarz:
             df_chart['Start'] = pd.to_datetime(df_chart['Start'])
             df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
             
-            # Etykiety dni (do kolumn)
+            # Etykiety dni
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
             df_chart['Day_Sort'] = df_chart['Start'].dt.date.astype(str)
             
@@ -633,18 +633,31 @@ with tab_kalendarz:
             # 1. BAZA - PASKI WYDARZEŃ (PIONOWE)
             bars = alt.Chart(df_chart).mark_bar(
                 cornerRadius=4,
-                width=80  # Szerokość słupka (kolumny dnia)
+                width=80  # Szerokość słupka
             ).encode(
-                # Oś X: Dni
+                # Oś X: Dni (Na górze - orient='top')
                 x=alt.X('Day_Label:N', 
                         title=None, 
                         sort=alt.EncodingSortField(field="Day_Sort", order="ascending"),
-                        axis=alt.Axis(labelColor=COLOR_TEXT, labelFontSize=12, labelFontWeight="bold", labelAngle=0)
+                        axis=alt.Axis(
+                            labelColor=COLOR_BG, 
+                            labelFontSize=12, 
+                            labelFontWeight="bold", 
+                            labelAngle=0,
+                            orient='top' # Dni na górze
+                        )
                 ),
-                # Oś Y: Czas Startu
+                # Oś Y: Czas Startu (Odwrócona - 00:00 u góry)
                 y=alt.Y('hoursminutes(Start):T', 
                         title=None,
-                        axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, grid=True, gridColor="#444444", gridOpacity=0.5)
+                        scale=alt.Scale(reverse=True), # TO NAPRAWIA BŁĄD (Odwrócenie osi tutaj)
+                        axis=alt.Axis(
+                            format='%H:%M', 
+                            labelColor=COLOR_BG, 
+                            grid=True, 
+                            gridColor="#888888", 
+                            gridOpacity=0.5
+                        )
                 ),
                 # Oś Y2: Czas Końca
                 y2='hoursminutes(Koniec):T',
@@ -657,23 +670,23 @@ with tab_kalendarz:
             text = alt.Chart(df_chart).mark_text(
                 align='center',
                 baseline='middle',
-                dy=-10, # Przesunięcie lekko w górę
+                dy=-10,
                 color='white',
                 fontWeight='bold',
                 fontSize=11,
-                limit=75 # Limit szerokości tekstu
+                limit=75
             ).encode(
                 x=alt.X('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
-                y=alt.Y('hoursminutes(Start):T'), # Tekst zaczepiony na początku wydarzenia
-                y2='hoursminutes(Koniec):T',      # Centrowanie w pionie
+                y=alt.Y('hoursminutes(Start):T'),
+                y2='hoursminutes(Koniec):T',
                 text='Tytuł'
             )
             
-            # 3. TEKST GODZIN (Opcjonalnie: czas trwania pod tytułem)
+            # 3. TEKST GODZIN
             text_time = alt.Chart(df_chart).mark_text(
                 align='center',
                 baseline='middle',
-                dy=5, # Przesunięcie lekko w dół
+                dy=5,
                 color='white',
                 opacity=0.8,
                 fontSize=9
@@ -685,12 +698,9 @@ with tab_kalendarz:
             )
 
             # Składanie wykresu
-            # reverse=True na osi Y sprawia, że 00:00 jest na górze (jak w kalendarzu), a 24:00 na dole
             chart = (bars + text + text_time).properties(
-                height=800, # Wysoki wykres pionowy
-                background=COLOR_BG
-            ).configure_axisY(
-                scale=alt.Scale(reverse=True) # ODWRÓCENIE OSI CZASU (Ranek u góry)
+                height=800, 
+                background=COLOR_TEXT # Kremowe tło
             ).configure_view(
                 strokeWidth=0
             )
@@ -699,7 +709,6 @@ with tab_kalendarz:
         
         else:
             st.info("Kalendarz jest pusty. Dodaj aktywności lub trasę, aby zobaczyć plan.")
-
     # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
     col_toolbox, col_route = st.columns(2)
 
