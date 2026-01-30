@@ -900,14 +900,15 @@ with tab_podsumowanie:
             else: 
                 st.caption("Brak płatnych atrakcji.")
 
-    with col_right:
+   with col_right:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
                 # DANE DO WYKRESU SŁUPKOWEGO
                 df_A['Data_Group'] = df_A['Start'].dt.date
                 df_A['Etykieta'] = df_A['Start'].dt.strftime('%d.%m')
-                df_A['Day_Sort'] = df_A['Data_Group'].astype(str)
+                # FIX SORTOWANIA: Format ISO (RRRR-MM-DD) zapewnia poprawne sortowanie chronologiczne
+                df_A['Day_Sort'] = df_A['Start'].dt.strftime('%Y-%m-%d')
                 
                 # Paleta szczegółowa dla słupków
                 domain_bar = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
@@ -917,7 +918,8 @@ with tab_podsumowanie:
                 base = alt.Chart(df_A).encode(
                     x=alt.X('Etykieta:O', 
                             title='Dzień', 
-                            sort=alt.EncodingSortField(field="Day_Sort", order="ascending"), 
+                            # FIX: Dodano op="min", aby poprawnie agregować klucz sortowania
+                            sort=alt.EncodingSortField(field="Day_Sort", op="min", order="ascending"), 
                             axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, grid=False)
                     )
                 )
@@ -940,7 +942,8 @@ with tab_podsumowanie:
                     color=COLOR_TEXT,
                     fontWeight='bold'
                 ).encode(
-                    x=alt.X('Etykieta:O', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                    # Tutaj też musimy zastosować ten sam sort
+                    x=alt.X('Etykieta:O', sort=alt.EncodingSortField(field="Day_Sort", op="min", order="ascending")),
                     y=alt.Y('Koszt:Q'),
                     text=alt.Text('Koszt:Q', format='.0f')
                 )
