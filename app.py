@@ -651,38 +651,80 @@ with tab_kalendarz:
     
     st.divider()
 
-    # --- PRZYBORNIK (TERAZ NA PEŁNĄ SZEROKOŚĆ) ---
-    with st.container(border=True):
-        st.subheader("📌 Przybornik")
-        c1, c2, c3 = st.columns(3)
-        filtry = []
-        if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
-        if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
-        if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
-        mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
-        niezaplanowane = st.session_state.db[mask_przyb]
-        if not niezaplanowane.empty:
-            filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
-            if not filtrowane_df.empty:
-                opcje = filtrowane_df['Tytuł'].tolist()
-                wybrany = st.selectbox("Wybierz element:", opcje)
-                info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
-                st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
-                cd, ch = st.columns(2)
-                with cd: wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
-                with ch: wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
-                if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
-                    with st.spinner("Aktualizuję..."):
-                        start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
-                        idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
-                        st.session_state.db.at[idx, 'Start'] = start_dt
-                        st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
-                        st.session_state.db.at[idx, 'Zaplanowane'] = True
-                        csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+    # --- DOLNA SEKCJA (PRZYBORNIK + NOWA SZYBKA TRASA) ---
+    col_toolbox, col_route = st.columns(2)
+
+    # 1. PRZYBORNIK (LEWO)
+    with col_toolbox:
+        with st.container(border=True):
+            st.subheader("📌 Przybornik")
+            c1, c2, c3 = st.columns(3)
+            filtry = []
+            if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
+            if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
+            if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
+            mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
+            niezaplanowane = st.session_state.db[mask_przyb]
+            if not niezaplanowane.empty:
+                filtrowane_df = niezaplanowane[niezaplanowane['Kategoria'].isin(filtry)]
+                if not filtrowane_df.empty:
+                    opcje = filtrowane_df['Tytuł'].tolist()
+                    wybrany = st.selectbox("Wybierz element:", opcje)
+                    info = filtrowane_df[filtrowane_df['Tytuł'] == wybrany].iloc[0]
+                    st.caption(f"Czas: **{int(float(info['Czas (h)']))}h** | Koszt: **{info.get('Koszt', 0)} PLN**")
+                    cd, ch = st.columns(2)
+                    with cd: wybrana_data = st.date_input("Dzień:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days))
+                    with ch: wybrana_godzina = st.selectbox("Start:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=10)
+                    if st.button("⬅️ WRZUĆ NA PLAN", type="primary", use_container_width=True):
+                        with st.spinner("Aktualizuję..."):
+                            start_dt = datetime.combine(wybrana_data, time(wybrana_godzina, 0))
+                            idx = st.session_state.db[st.session_state.db['Tytuł'] == wybrany].index[0]
+                            st.session_state.db.at[idx, 'Start'] = start_dt
+                            st.session_state.db.at[idx, 'Koniec'] = start_dt + timedelta(hours=float(info['Czas (h)']))
+                            st.session_state.db.at[idx, 'Zaplanowane'] = True
+                            csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
+                            update_file(repo, data_file, csv_buffer.getvalue())
+                            st.success("Zapisano!"); st.rerun()
+                else: st.warning("Brak elementów.")
+            else: st.success("Pusto!")
+
+    # 2. SZYBKA TRASA (PRAWO)
+    with col_route:
+        with st.container(border=True):
+            st.subheader("🚗 Dodaj Trasę")
+            
+            r_tytul = st.text_input("Tytuł trasy (np. Dojazd do Włoch)")
+            
+            c_r_data, c_r_godz = st.columns(2)
+            with c_r_data: r_data = st.date_input("Kiedy:", value=current_start_date, min_value=current_start_date, max_value=current_start_date + timedelta(days=current_days), key="route_date")
+            with c_r_godz: r_godz = st.selectbox("O której:", list(range(24)), format_func=lambda x: f"{x:02d}:00", index=8, key="route_hour")
+            
+            r_czas = st.number_input("Czas trwania (h):", min_value=1.0, step=0.5, value=2.0)
+            
+            if st.button("Dodaj trasę na mapę", type="primary", use_container_width=True):
+                if r_tytul:
+                    with st.spinner("Dodaję trasę..."):
+                        start_dt = datetime.combine(r_data, time(r_godz, 0))
+                        
+                        # Tworzymy nowy wpis od razu jako ZAPLANOWANY
+                        nowa_trasa = pd.DataFrame([{
+                            'Tytuł': r_tytul, 
+                            'Kategoria': 'Trasa', 
+                            'Czas (h)': float(r_czas), 
+                            'Start': start_dt, 
+                            'Koniec': start_dt + timedelta(hours=float(r_czas)), 
+                            'Zaplanowane': True,
+                            'Koszt': 0.0, 
+                            'Typ_Kosztu': 'Indywidualny' 
+                        }])
+                        
+                        updated_df = pd.concat([st.session_state.db, nowa_trasa], ignore_index=True)
+                        csv_buffer = io.StringIO(); updated_df.to_csv(csv_buffer, index=False)
                         update_file(repo, data_file, csv_buffer.getvalue())
-                        st.success("Zapisano!"); st.rerun()
-            else: st.warning("Brak elementów.")
-        else: st.success("Pusto!")
+                        st.session_state.db = updated_df
+                        st.success(f"Dodano trasę: {r_tytul}"); st.rerun()
+                else:
+                    st.error("Wpisz tytuł trasy!")
 
 # --- TAB 4: PODSUMOWANIE ---
 with tab_podsumowanie:
