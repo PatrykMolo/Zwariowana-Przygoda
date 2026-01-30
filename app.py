@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -609,7 +610,7 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX PUSTEGO EKRANU) ---
+# --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ - FIX PÓŁNOCY) ---
     else:
         # 1. Generujemy listę WSZYSTKICH dni wyjazdu
         all_dates = [current_start_date + timedelta(days=i) for i in range(current_days)]
@@ -638,11 +639,7 @@ with tab_kalendarz:
 
         calc_width = max(len(all_days_labels) * 120, 600)
 
-        # Definiujemy sztywny zakres doby (dla Y)
-        y_min = datetime(2000, 1, 1, 0, 0, 0)
-        y_max = datetime(2000, 1, 1, 23, 59, 59)
-
-        # --- LOGIKA CIĘCIA PRZEZ PÓŁNOC ---
+        # --- LOGIKA CIĘCIA PRZEZ PÓŁNOC (FIX) ---
         chart_rows = []
         if not df_raw.empty:
             df_raw['Start'] = pd.to_datetime(df_raw['Start'])
@@ -651,71 +648,67 @@ with tab_kalendarz:
             for _, row in df_raw.iterrows():
                 s = row['Start']
                 e = row['Koniec']
+                
+                # Jeśli wydarzenie kończy się w innym dniu niż zaczyna
                 while s.date() < e.date():
+                    # Tworzymy segment do końca bieżącego dnia (23:59:59)
                     end_of_day = datetime.combine(s.date(), time(23, 59, 59))
+                    
                     segment = row.copy()
                     segment['Start'] = s
                     segment['Koniec'] = end_of_day
                     chart_rows.append(segment)
+                    
+                    # Przesuwamy start na początek następnego dnia (00:00:00)
                     s = datetime.combine(s.date() + timedelta(days=1), time(0, 0, 0))
                 
+                # Dodajemy ostatni segment (lub jedyny, jeśli nie przechodziło przez północ)
                 last_segment = row.copy()
                 last_segment['Start'] = s
                 last_segment['Koniec'] = e
                 chart_rows.append(last_segment)
-            
+                
             df_chart = pd.DataFrame(chart_rows)
+            # Generujemy etykietę dnia PO pocięciu
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
         else:
-            df_chart = pd.DataFrame(columns=['Start', 'Koniec', 'Tytuł', 'Kategoria', 'Day_Label'])
+            df_chart = pd.DataFrame()
 
-        # --- WARSTWA TŁA (FIX GLÓWNY) ---
-        # Tworzymy pełne prostokąty tła (00:00-23:59) dla KAŻDEGO dnia
-        # To wymusza narysowanie osi Y na pełną wysokość
-        bg_rows = []
-        for d_label in all_days_labels:
-            bg_rows.append({
-                'Day_Label': d_label,
-                'Start': y_min,
-                'Koniec': y_max
-            })
-        bg_data = pd.DataFrame(bg_rows)
-        
-        # 1. Rysujemy niewidoczne tło (Opacity 0), ale definiujemy Y i Y2!
-        base_grid = alt.Chart(bg_data).mark_rect(opacity=0).encode(
-            x=alt.X('Day_Label:N', 
-                    title=None, 
-                    scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
-                    axis=alt.Axis(
-                        labelColor=COLOR_TEXT, 
-                        labelFontSize=13, 
-                        labelFontWeight="bold", 
-                        labelAngle=0, 
-                        orient='top', 
-                        domainColor=COLOR_BG, 
-                        tickColor=COLOR_BG
-                    )
-            ),
-            y=alt.Y('hoursminutes(Start):T',
-                    scale=alt.Scale(reverse=True, domain=[y_min, y_max]),
-                    axis=alt.Axis(
-                        format='%H:%M', 
-                        labelColor=COLOR_TEXT, 
-                        grid=True, 
-                        gridColor="#444444", 
-                        gridOpacity=0.3, 
-                        domain=False, 
-                        tickColor=COLOR_BG
-                    )
-            ),
-            y2='hoursminutes(Koniec):T' # To jest kluczowe - definiuje koniec doby
-        )
+        # Baza wykresu
+        base_chart = alt.Chart(df_chart if not df_chart.empty else pd.DataFrame({'Day_Label': all_days_labels}))
 
-        # 2. Rysujemy Paski (Jeśli są dane)
+        # 3. Rysujemy Paski
         if not df_chart.empty:
-            bars = alt.Chart(df_chart).mark_bar(cornerRadius=4, width=60).encode(
-                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05)),
-                y=alt.Y('hoursminutes(Start):T', scale=alt.Scale(reverse=True, domain=[y_min, y_max])),
+            bars = base_chart.mark_bar(
+                cornerRadius=4,
+                width=60 
+            ).encode(
+                x=alt.X('Day_Label:N', 
+                        title=None, 
+                        scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), 
+                        axis=alt.Axis(
+                            labelColor=COLOR_TEXT, 
+                            labelFontSize=13, 
+                            labelFontWeight="bold", 
+                            labelAngle=0, 
+                            orient='top', 
+                            domainColor=COLOR_BG, 
+                            tickColor=COLOR_BG
+                        )
+                ),
+                y=alt.Y('hoursminutes(Start):T', 
+                        title=None,
+                        scale=alt.Scale(reverse=True), 
+                        axis=alt.Axis(
+                            format='%H:%M', 
+                            labelColor=COLOR_TEXT, 
+                            grid=True, 
+                            gridColor="#444444", 
+                            gridOpacity=0.3,
+                            domain=False,
+                            tickColor=COLOR_BG
+                        )
+                ),
                 y2='hoursminutes(Koniec):T',
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
                 tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
@@ -730,11 +723,12 @@ with tab_kalendarz:
                 align='center', baseline='middle', dy=5,
                 color='white', opacity=0.8, fontSize=9
             ).encode(text=alt.Text('hoursminutes(Start):T', format='%H:%M'))
-            
-            final_chart = (base_grid + bars + text + text_time)
+
+            final_chart = (bars + text + text_time)
         else:
-            # Jeśli brak danych, wyświetlamy samą siatkę (base_grid wystarczy, bo ma zdefiniowane wymiary)
-            final_chart = base_grid
+            final_chart = alt.Chart(pd.DataFrame({'Day_Label': all_days_labels})).mark_rect().encode(
+                x=alt.X('Day_Label:N', scale=alt.Scale(domain=all_days_labels, paddingInner=0.05), axis=alt.Axis(labelColor=COLOR_TEXT, orient='top'))
+            )
 
         # Finalna konfiguracja
         final_chart = final_chart.properties(
