@@ -13,11 +13,13 @@ import uuid
 # ==========================================
 COLOR_BG = "#1e2630"        # Gunmetal (Tło)
 COLOR_TEXT = "#faf9dd"      # Cream (Tekst)
-COLOR_ACCENT = "#d37759"    # Terracotta (Akcent: Przyciski, Atrakcje)
-COLOR_SEC = "#4a7a96"       # Muted Blue (Drugorzędny: Nagłówek, Trasa)
-# Dodatkowe kolory do wykresów:
-COLOR_EXTRA_1 = "#7c8c58"   # Olive Drab
-COLOR_EXTRA_2 = "#8c5e7c"   # Muted Plum
+COLOR_ACCENT = "#d37759"    # Terracotta (Atrakcja)
+COLOR_SEC = "#4a7a96"       # Muted Blue (Trasa)
+
+# Dodatkowe kolory do kategorii:
+COLOR_FOOD = "#7c8c58"      # Olive Drab (Jedzenie)
+COLOR_PARTY = "#8c5e7c"     # Muted Plum (Impreza)
+COLOR_SPORT = "#e0c068"     # Muted Gold (Sport/Rekreacja) - NOWY KOLOR
 
 # ==========================================
 # ⚙️ KONFIGURACJA PLIKÓW
@@ -424,8 +426,8 @@ with tab_edytor:
                 st.subheader("➕ Dodaj aktywność")
                 with st.form("dodawanie_form", clear_on_submit=True):
                     tytul = st.text_input("Tytuł")
-                    # ZMIANA: Usunięto "Trasa" z listy
-                    kat = st.selectbox("Kategoria", ["Atrakcja", "Odpoczynek"]) 
+                    # NOWA LISTA KATEGORII
+                    kat = st.selectbox("Kategoria", ["Atrakcja", "Jedzenie", "Impreza", "Sport/Rekreacja"]) 
                     c1, c2 = st.columns(2)
                     with c1: czas = st.number_input("Czas (h)", min_value=1.0, step=1.0, value=1.0) 
                     with c2: koszt = st.number_input("Koszt (PLN)", min_value=0.0, step=10.0, value=0.0)
@@ -621,8 +623,12 @@ with tab_kalendarz:
                     except: cost_val = 0.0
                     cost_badge = f"<span style='float:right; font-weight:bold; background-color:rgba(255,255,255,0.2); padding: 2px 6px; border-radius:4px;'>{cost_val:.0f} zł</span>" if cost_val > 0 else ""
                     
+                    # KOLORYSTKA KART W TRYBIE MOBILNYM
                     if cat == "Atrakcja": bg_color = COLOR_ACCENT; text_color = "#faf9dd"
                     elif cat == "Trasa": bg_color = COLOR_SEC; text_color = "#ffffff"
+                    elif cat == "Jedzenie": bg_color = COLOR_FOOD; text_color = "#ffffff"
+                    elif cat == "Impreza": bg_color = COLOR_PARTY; text_color = "#ffffff"
+                    elif cat == "Sport/Rekreacja": bg_color = COLOR_SPORT; text_color = "#ffffff"
                     else: bg_color = "#444444"; text_color = "#dddddd"
 
                     card_html = ""
@@ -636,7 +642,11 @@ with tab_kalendarz:
     else:
         background_df = generuj_tlo_widoku(current_start_date, current_days)
         full_df = przygotuj_dane_do_siatki(st.session_state.db)
-        domain = ["Atrakcja", "Trasa", "Odpoczynek", "Tło"]; range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_TEXT, COLOR_BG] 
+        
+        # AKTUALIZACJA KOLORÓW NA WYKRESIE
+        domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Tło"]
+        range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, COLOR_BG] 
+        
         total_width = current_days * SZEROKOSC_KOLUMNY_DZIEN
         st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
         base = alt.Chart(background_df).encode(x=alt.X('Dzień:O', sort=alt.EncodingSortField(field="DataFull", order="ascending"), axis=alt.Axis(labelAngle=0, title=None, labelFontSize=11, labelColor=COLOR_TEXT)), y=alt.Y('Godzina:O', scale=alt.Scale(domain=list(range(24))), axis=alt.Axis(title=None, labelColor=COLOR_TEXT)))
@@ -659,10 +669,14 @@ with tab_kalendarz:
         with st.container(border=True):
             st.subheader("📌 Przybornik")
             c1, c2, c3 = st.columns(3)
+            # AKTUALIZACJA FILTRÓW
             filtry = []
             if c1.checkbox("Atrakcja", value=True): filtry.append("Atrakcja")
-            if c2.checkbox("Trasa", value=True): filtry.append("Trasa")
-            if c3.checkbox("Odpoczynek", value=True): filtry.append("Odpoczynek")
+            if c1.checkbox("Trasa", value=True): filtry.append("Trasa")
+            if c2.checkbox("Jedzenie", value=True): filtry.append("Jedzenie")
+            if c2.checkbox("Impreza", value=True): filtry.append("Impreza")
+            if c3.checkbox("Sport", value=True): filtry.append("Sport/Rekreacja")
+            
             mask_przyb = (st.session_state.db['Zaplanowane'].astype(str).str.upper() != 'TRUE') & (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
             niezaplanowane = st.session_state.db[mask_przyb]
             if not niezaplanowane.empty:
@@ -685,7 +699,7 @@ with tab_kalendarz:
                             csv_buffer = io.StringIO(); st.session_state.db.to_csv(csv_buffer, index=False)
                             update_file(repo, data_file, csv_buffer.getvalue())
                             st.success("Zapisano!"); st.rerun()
-                else: st.warning("Brak elementów.")
+                else: st.warning("Brak elementów w wybranych kategoriach.")
             else: st.success("Pusto!")
 
     # 2. SZYBKA TRASA (PRAWO)
@@ -755,8 +769,13 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # Paleta z nowymi kolorami
-                pie_scale = alt.Scale(range=[COLOR_ACCENT, COLOR_SEC, COLOR_EXTRA_1, COLOR_EXTRA_2, COLOR_TEXT, "gray"])
+                # ZAKTUALIZOWANA PALETA WYKRESU KOŁOWEGO
+                # Kolejność w range musi odpowiadać potencjalnym kategoriom
+                # Używamy sprytnego mapowania Altair
+                pie_scale = alt.Scale(
+                    domain=["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja", "Nocleg", "Wynajem Busa", "Winiety", "Inne", "Paliwo"],
+                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT, "gray", "gray", "gray", "gray", "gray"]
+                )
                 
                 # Baza wykresu
                 base = alt.Chart(df_pie).encode(
