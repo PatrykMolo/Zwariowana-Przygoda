@@ -609,20 +609,18 @@ with tab_kalendarz:
                     st.markdown(card_html, unsafe_allow_html=True)
                 st.write("")
     
-    # --- WIDOK DESKTOPOWY (ALTAIR) ---
-    # --- WIDOK DESKTOPOWY (NOWY TIMELINE) ---
+    # --- WIDOK DESKTOPOWY (PIONOWY KALENDARZ) ---
     else:
-        # Filtrujemy dane (tylko to co ma datę startu)
+        # Filtrujemy dane
         mask = (st.session_state.db['Zaplanowane'].astype(str).str.upper() == 'TRUE') & \
                (st.session_state.db['Typ_Kosztu'] == 'Indywidualny')
         df_chart = st.session_state.db[mask].copy()
 
         if not df_chart.empty:
-            # Przygotowanie danych dla Altair
             df_chart['Start'] = pd.to_datetime(df_chart['Start'])
             df_chart['Koniec'] = pd.to_datetime(df_chart['Koniec'])
             
-            # Tworzymy etykietę dnia do sortowania na osi Y
+            # Etykiety dni (do kolumn)
             df_chart['Day_Label'] = df_chart['Start'].dt.strftime('%d.%m %A')
             df_chart['Day_Sort'] = df_chart['Start'].dt.date.astype(str)
             
@@ -630,48 +628,69 @@ with tab_kalendarz:
             domain = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
             range_colors = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
-            # Ustawienia wykresu
             st.markdown("""<style>[data-testid="stAltairChart"] {overflow-x: auto; padding-bottom: 10px;}</style>""", unsafe_allow_html=True)
             
-            # BAZA - PASKI (BARS)
+            # 1. BAZA - PASKI WYDARZEŃ (PIONOWE)
             bars = alt.Chart(df_chart).mark_bar(
-                cornerRadius=8, # Zaokrąglone rogi (wygląda nowocześnie)
-                height=40       # Wysokość pojedynczego wiersza dnia
+                cornerRadius=4,
+                width=80  # Szerokość słupka (kolumny dnia)
             ).encode(
-                x=alt.X('hoursminutes(Start):T', title='Godzina', axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, gridColor="#444444")),
-                x2='hoursminutes(Koniec):T',
-                y=alt.Y('Day_Label:N', 
+                # Oś X: Dni
+                x=alt.X('Day_Label:N', 
                         title=None, 
                         sort=alt.EncodingSortField(field="Day_Sort", order="ascending"),
-                        axis=alt.Axis(labelColor=COLOR_TEXT, labelFontSize=13, labelFontWeight="bold")
+                        axis=alt.Axis(labelColor=COLOR_TEXT, labelFontSize=12, labelFontWeight="bold", labelAngle=0)
                 ),
+                # Oś Y: Czas Startu
+                y=alt.Y('hoursminutes(Start):T', 
+                        title=None,
+                        axis=alt.Axis(format='%H:%M', labelColor=COLOR_TEXT, grid=True, gridColor="#444444", gridOpacity=0.5)
+                ),
+                # Oś Y2: Czas Końca
+                y2='hoursminutes(Koniec):T',
+                
                 color=alt.Color('Kategoria', scale=alt.Scale(domain=domain, range=range_colors), legend=None),
                 tooltip=['Tytuł', 'Kategoria', 'Start', 'Koniec', 'Koszt']
             )
 
-            # WARSTWA TEKSTU (TYTUŁY NA PASKACH)
+            # 2. TEKST (Tytuły wewnątrz słupków)
             text = alt.Chart(df_chart).mark_text(
-                align='left',
+                align='center',
                 baseline='middle',
-                dx=5,  # Margines od lewej krawędzi paska
-                color='white', # Zawsze biały tekst na kolorowym pasku
+                dy=-10, # Przesunięcie lekko w górę
+                color='white',
                 fontWeight='bold',
-                fontSize=12
+                fontSize=11,
+                limit=75 # Limit szerokości tekstu
             ).encode(
-                x='hoursminutes(Start):T',
-                x2='hoursminutes(Koniec):T',
-                y=alt.Y('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                x=alt.X('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                y=alt.Y('hoursminutes(Start):T'), # Tekst zaczepiony na początku wydarzenia
+                y2='hoursminutes(Koniec):T',      # Centrowanie w pionie
                 text='Tytuł'
             )
+            
+            # 3. TEKST GODZIN (Opcjonalnie: czas trwania pod tytułem)
+            text_time = alt.Chart(df_chart).mark_text(
+                align='center',
+                baseline='middle',
+                dy=5, # Przesunięcie lekko w dół
+                color='white',
+                opacity=0.8,
+                fontSize=9
+            ).encode(
+                x=alt.X('Day_Label:N', sort=alt.EncodingSortField(field="Day_Sort", order="ascending")),
+                y=alt.Y('hoursminutes(Start):T'),
+                y2='hoursminutes(Koniec):T',
+                text=alt.Text('hoursminutes(Start):T', format='%H:%M')
+            )
 
-            # ŁĄCZENIE I KONFIGURACJA
-            # configure_view(stroke=None) usuwa ramkę dookoła wykresu
-            chart = (bars + text).properties(
-                height=len(df_chart['Day_Label'].unique()) * 60 + 50, # Dynamiczna wysokość zależna od liczby dni
-                background=COLOR_BG # Tło całego wykresu
-            ).configure_axis(
-                grid=True,
-                domain=False
+            # Składanie wykresu
+            # reverse=True na osi Y sprawia, że 00:00 jest na górze (jak w kalendarzu), a 24:00 na dole
+            chart = (bars + text + text_time).properties(
+                height=800, # Wysoki wykres pionowy
+                background=COLOR_BG
+            ).configure_axisY(
+                scale=alt.Scale(reverse=True) # ODWRÓCENIE OSI CZASU (Ranek u góry)
             ).configure_view(
                 strokeWidth=0
             )
