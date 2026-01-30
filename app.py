@@ -838,10 +838,9 @@ with tab_podsumowanie:
         with st.container(border=True):
             st.markdown("#### Struktura kosztów")
             
-            # 1. AGREGACJA: Indywidualne -> "Atrakcje"
+            # --- PIE CHART (FIX KOLORÓW) ---
             pie_data = [{'Kategoria': 'Atrakcje', 'Wartość': sum_A}]
             
-            # 2. AGREGACJA: Koszty wspólne -> Orginalne kategorie (Nocleg, Trasa etc.)
             if not df_B.empty:
                 grouped_B = df_B.groupby('Kategoria')['Koszt'].sum().reset_index()
                 for _, row in grouped_B.iterrows(): 
@@ -852,23 +851,13 @@ with tab_podsumowanie:
             if not df_pie.empty:
                 df_pie['Procent'] = df_pie['Wartość'] / df_pie['Wartość'].sum()
                 
-                # --- DEFINICJA KOLORÓW DLA KOŁA ---
-                # Przypisujemy konkretne zmienne kolorów do kategorii
+                # Paleta z kolorami (Nocleg=Złoty, Bus=Fiolet, Winiety=Oliwka)
                 pie_scale = alt.Scale(
                     domain=["Atrakcje", "Trasa", "Nocleg", "Wynajem Busa", "Winiety", "Inne"],
-                    range=[
-                        COLOR_ACCENT, # Atrakcje (Czerwony)
-                        COLOR_SEC,    # Trasa/Paliwo (Niebieski)
-                        COLOR_SPORT,  # Nocleg (Złoty - wygląda "premium")
-                        COLOR_PARTY,  # Wynajem Busa (Fioletowy)
-                        COLOR_FOOD,   # Winiety (Oliwkowy)
-                        "#888888"     # Inne (Szary)
-                    ]
+                    range=[COLOR_ACCENT, COLOR_SEC, COLOR_SPORT, COLOR_PARTY, COLOR_FOOD, "#888888"]
                 )
                 
-                base = alt.Chart(df_pie).encode(
-                    theta=alt.Theta("Wartość", stack=True)
-                )
+                base = alt.Chart(df_pie).encode(theta=alt.Theta("Wartość", stack=True))
                 
                 pie = base.mark_arc(innerRadius=50).encode(
                     color=alt.Color("Kategoria", scale=pie_scale, legend=alt.Legend(orient="bottom", labelColor=COLOR_TEXT, columns=2)),
@@ -877,16 +866,10 @@ with tab_podsumowanie:
                 )
                 
                 labels_bg = base.mark_text(radius=120, size=60).encode(
-                    text=alt.value("●"), 
-                    color=alt.value("#1e2630"), 
-                    opacity=alt.value(0.6), 
-                    order=alt.Order("Kategoria")
+                    text=alt.value("●"), color=alt.value("#1e2630"), opacity=alt.value(0.6), order=alt.Order("Kategoria")
                 )
-                
                 labels_text = base.mark_text(radius=120, size=14, fontWeight="bold").encode(
-                    text=alt.Text("Procent", format=".0%"), 
-                    order=alt.Order("Kategoria"), 
-                    color=alt.value(COLOR_TEXT) 
+                    text=alt.Text("Procent", format=".0%"), order=alt.Order("Kategoria"), color=alt.value(COLOR_TEXT) 
                 )
                 
                 st.altair_chart(pie + labels_bg + labels_text, use_container_width=True)
@@ -900,49 +883,40 @@ with tab_podsumowanie:
             else: 
                 st.caption("Brak płatnych atrakcji.")
 
-   with col_right:
+    with col_right:
         with st.container(border=True):
             st.markdown("#### 📅 Wykres wydatków w czasie")
             if not df_A.empty:
-                # DANE DO WYKRESU SŁUPKOWEGO
+                # --- BAR CHART (FIX SORTOWANIA) ---
                 df_A['Data_Group'] = df_A['Start'].dt.date
                 df_A['Etykieta'] = df_A['Start'].dt.strftime('%d.%m')
-                # FIX SORTOWANIA: Format ISO (RRRR-MM-DD) zapewnia poprawne sortowanie chronologiczne
+                # Klucz sortowania w formacie ISO (RRRR-MM-DD)
                 df_A['Day_Sort'] = df_A['Start'].dt.strftime('%Y-%m-%d')
                 
-                # Paleta szczegółowa dla słupków
                 domain_bar = ["Atrakcja", "Trasa", "Jedzenie", "Impreza", "Sport/Rekreacja"]
                 range_bar = [COLOR_ACCENT, COLOR_SEC, COLOR_FOOD, COLOR_PARTY, COLOR_SPORT]
 
-                # Baza
                 base = alt.Chart(df_A).encode(
                     x=alt.X('Etykieta:O', 
                             title='Dzień', 
-                            # FIX: Dodano op="min", aby poprawnie agregować klucz sortowania
+                            # FIX: op="min" wymusza poprawne sortowanie grup
                             sort=alt.EncodingSortField(field="Day_Sort", op="min", order="ascending"), 
                             axis=alt.Axis(labelAngle=0, labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, grid=False)
                     )
                 )
 
-                # Warstwa 1: Skumulowane słupki
                 bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                     y=alt.Y('sum(Koszt):Q', title='Suma (PLN)', axis=alt.Axis(labelColor=COLOR_TEXT, titleColor=COLOR_TEXT, gridColor="#444444", gridOpacity=0.3)),
                     color=alt.Color('Kategoria', scale=alt.Scale(domain=domain_bar, range=range_bar), legend=alt.Legend(orient="bottom", title=None, labelColor=COLOR_TEXT)),
                     tooltip=['Etykieta', 'Kategoria', alt.Tooltip('sum(Koszt)', title='Kwota', format='.0f')]
                 )
 
-                # Warstwa 2: Suma całkowita
                 daily_totals = df_A.groupby(['Etykieta', 'Day_Sort'])['Koszt'].sum().reset_index()
                 
                 text_totals = alt.Chart(daily_totals).mark_text(
-                    align='center',
-                    baseline='bottom',
-                    dy=-5,
-                    size=12,
-                    color=COLOR_TEXT,
-                    fontWeight='bold'
+                    align='center', baseline='bottom', dy=-5, size=12, color=COLOR_TEXT, fontWeight='bold'
                 ).encode(
-                    # Tutaj też musimy zastosować ten sam sort
+                    # Tutaj też dodajemy sortowanie
                     x=alt.X('Etykieta:O', sort=alt.EncodingSortField(field="Day_Sort", op="min", order="ascending")),
                     y=alt.Y('Koszt:Q'),
                     text=alt.Text('Koszt:Q', format='.0f')
