@@ -2,4 +2,4 @@ Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
 Krakow-Alba Iulia,Trasa,11.5,2026-08-14 04:00:00,2026-08-14 15:30:00,True,0.0,Indywidualny
 Obiad Alba,Jedzenie,2.0,2026-08-14 16:00:00,2026-08-14 18:00:00,True,50.0,Indywidualny
 Alba Iulia - Cartisoara,Trasa,1.5,2026-08-14 18:00:00,2026-08-14 19:30:00,True,0.0,Indywidualny
-Cartisoara-Bucharest,Trasa,6.0,,2026-08-14 13:00:00,False,0.0,Indywidualny
+Cartisoara-Bucharest,Trasa,6.0,2026-08-15 07:00:00,2026-08-15 13:00:00,True,0.0,Indywidualny
