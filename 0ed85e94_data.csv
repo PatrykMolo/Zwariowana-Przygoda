@@ -1,7 +1,7 @@
 Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
 Bramki A4,Inne,0.0,,,False,72.0,Wspólny
 Bastei/bohemian switzerland,Atrakcja,3.5,2026-07-24 11:00:00,2026-07-24 14:30:00,True,10.0,Indywidualny
-beherovka museum (12:00),Atrakcja,1.0,,,False,42.0,Indywidualny
+beherovka museum (12:00),Atrakcja,1.0,2026-07-25 12:00:00,2026-07-25 13:00:00,True,42.0,Indywidualny
 zamek loket,Atrakcja,2.0,,,False,21.0,Indywidualny
 Krumlov,Nocleg,0.0,,,False,890.0,Wspólny
 karlowe wary,Nocleg,0.0,,,False,464.0,Wspólny
