@@ -1,6 +1,6 @@
 Tytuł,Kategoria,Czas (h),Start,Koniec,Zaplanowane,Koszt,Typ_Kosztu
 Bramki A4,Inne,0.0,,,False,72.0,Wspólny
-Sky Bridge 721,Atrakcja,4.0,2026-05-14 12:00:00,2026-05-14 16:00:00,True,70.0,Indywidualny
+Sky Bridge 721,Atrakcja,4.0,,2026-05-14 16:00:00,False,70.0,Indywidualny
 Hloboka Castle,Atrakcja,2.0,2026-05-16 13:00:00,2026-05-16 15:00:00,True,40.0,Indywidualny
 Krumlov tour,Atrakcja,2.0,2026-05-16 10:00:00,2026-05-16 12:00:00,True,40.0,Indywidualny
 Bastei/bohemian switzerland,Atrakcja,3.5,,,False,10.0,Indywidualny
